@@ -18,4 +18,5 @@ metadata.json
 check_*.cjs
 check_*.mjs
 test_*.js
-*.sql
+/database*.sql
+/fix_*.sql

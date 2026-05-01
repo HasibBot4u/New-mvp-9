@@ -150,6 +150,8 @@ async def preload_channels():
         if client is None: return
         count = 0
         async for dialog in client.get_dialogs():
+            if count >= 100:
+                break
             try:
                 if dialog.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP, ChatType.GROUP]:
                     resolved_channels.add(dialog.chat.id)
@@ -547,6 +549,17 @@ async def lifespan(app: FastAPI):
 
     await refresh_catalog()
     asyncio.create_task(telegram_watchdog())
+
+    async def catalog_refresher():
+        while True:
+            await asyncio.sleep(240)  # 4 minutes
+            try:
+                await refresh_catalog()
+            except Exception as e:
+                print(f"[NexusEdu] Background catalog refresh failed: {e}")
+    
+    asyncio.create_task(catalog_refresher())
+
     yield  # FastAPI serves requests here
 
     if tg is not None:
@@ -877,7 +890,6 @@ from fastapi import FastAPI, HTTPException, Request, Header
 async def stream_video(
     video_id: str,
     request: Request,
-    source: str = None,
     authorization: str = Header(None)
 ):
     """
@@ -910,6 +922,8 @@ async def stream_video(
                 drive_file_id = video.get("drive_file_id")
                 if not drive_file_id:
                     raise HTTPException(status_code=400, detail="Drive file ID missing")
+                if not re.match(r'^[a-zA-Z0-9_-]{10,100}$', drive_file_id):
+                    raise HTTPException(status_code=400, detail="Invalid Drive file ID format")
                 worker_url = os.environ.get("VITE_CLOUDFLARE_WORKER_URL", "https://nexusedu-proxy.mdhosainp414.workers.dev")
                 return RedirectResponse(url=f"{worker_url}/drive/{drive_file_id}", status_code=302)
 

@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
-if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set");
+if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
 
 type SourceKind = "youtube" | "drive" | "telegram";
 

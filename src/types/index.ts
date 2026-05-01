@@ -36,7 +36,6 @@ export interface Video {
   source_type?: 'telegram' | 'youtube' | 'drive';
   source_url?: string;
   youtube_video_id?: string; drive_file_id?: string;
-  telegram_channel_id?: string; telegram_message_id?: number;
   duration?: string; size_mb?: number; file_size_bytes?: number; mime_type?: string; thumbnail_url?: string;
   display_order: number; is_active: boolean; created_at: string; updated_at?: string;
 }

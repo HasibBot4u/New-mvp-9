@@ -42,14 +42,15 @@ export default function AdminSystemPage() {
 
   const checkHealth = async () => {
     setHealthLoading(true);
-    const base = import.meta.env.VITE_API_BASE_URL as string;
-    if (!base) {
-      setHealth({ ok: false, data: { error: "VITE_API_BASE_URL is not set." } });
+    const envBackendUrl = import.meta.env.VITE_API_BASE_URL as string;
+    const healthCheckUrl = envBackendUrl || backendUrl;
+    if (!healthCheckUrl) {
+      setHealth({ ok: false, data: { error: "VITE_API_BASE_URL or backendUrl is not set." } });
       setHealthLoading(false);
       return;
     }
     try {
-      const res = await fetch(base.replace(/\/+$/, "") + "/api/health", { method: "GET" });
+      const res = await fetch(healthCheckUrl.replace(/\/+$/, "") + "/api/health", { method: "GET" });
       const data = await res.json().catch(() => ({}));
       setHealth({ ok: res.ok, data });
     } catch (e: any) {

@@ -39,8 +39,6 @@ const mapChapter = (r: any): Chapter => ({
 const mapVideo = (r: any): Video => ({
   id: r.id, chapter_id: r.chapter_id, title: r.title, title_bn: r.title_bn,
   source_type: r.source_type,
-  telegram_channel_id: r.telegram_channel_id,
-  telegram_message_id: r.telegram_message_id ? Number(r.telegram_message_id) : undefined,
   youtube_video_id: r.youtube_video_id ?? null,
   drive_file_id: r.drive_file_id,
   duration: typeof r.duration === "string" ? r.duration : (r.duration ? String(r.duration) : undefined),
@@ -54,7 +52,7 @@ const fetchCatalog = async () => {
     sb.from("subjects").select("id, name, name_bn, slug, icon, color, display_order, is_active").eq("is_active", true).order("display_order"),
     sb.from("cycles").select("id, subject_id, name, name_bn, display_order, is_active").eq("is_active", true).order("display_order"),
     sb.from("chapters").select("id, cycle_id, name, name_bn, description, requires_enrollment, display_order, is_active").eq("is_active", true).order("display_order"),
-    sb.from("videos").select("id, chapter_id, title, title_bn, source_type, telegram_channel_id, telegram_message_id, youtube_video_id, drive_file_id, duration, size_mb, thumbnail_url, display_order, is_active").eq("is_active", true).order("display_order"),
+    sb.from("videos").select("id, chapter_id, title, title_bn, source_type, youtube_video_id, drive_file_id, duration, size_mb, thumbnail_url, display_order, is_active").eq("is_active", true).order("display_order"),
   ]);
   if (s.error || c.error || ch.error || v.error) {
     throw s.error || c.error || ch.error || v.error;

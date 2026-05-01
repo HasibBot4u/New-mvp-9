@@ -695,6 +695,7 @@ export function VideoPlayer({ videoId, sizeMb = 0, onComplete, onTimeUpdate }: V
             <div className="relative">
               <button 
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                aria-label="Playback speed settings"
                 className="flex items-center gap-1 text-sm font-medium hover:text-primary transition-colors"
               >
                 <Settings className="w-5 h-5" />

@@ -18,32 +18,10 @@ export default function AdminSystemPage() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [health, setHealth] = useState<{ ok: boolean; data: any } | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("system_settings").select("key, value");
-      const map: Record<string, any> = {};
-      for (const r of data ?? []) map[r.key] = r.value;
-      if (map.maintenance_mode) setMaintenance(!!map.maintenance_mode.enabled);
-      if (map.allow_registrations) setAllowReg(map.allow_registrations.enabled !== false);
-      if (map.platform_name?.text) setPlatformName(map.platform_name.text);
-      if (map.platform_color?.color) setColor(map.platform_color.color);
-      if (map.backend_url?.url) setBackendUrl(map.backend_url.url);
-      setLoading(false);
-      checkHealth();
-    })();
-  }, []);
-
-  const upsert = async (key: string, value: any) => {
-    const { error } = await supabase.from("system_settings")
-      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
-    if (error) toast({ title: "ব্যর্থ", description: error.message, variant: "destructive" });
-    else { toast({ title: "সংরক্ষিত হয়েছে" }); refreshSettings(); }
-  };
-
-  const checkHealth = async () => {
+  const checkHealth = async (urlOverride?: string) => {
     setHealthLoading(true);
     const envBackendUrl = import.meta.env.VITE_API_BASE_URL as string;
-    const healthCheckUrl = envBackendUrl || backendUrl;
+    const healthCheckUrl = envBackendUrl || urlOverride || backendUrl;
     if (!healthCheckUrl) {
       setHealth({ ok: false, data: { error: "VITE_API_BASE_URL or backendUrl is not set." } });
       setHealthLoading(false);
@@ -58,6 +36,33 @@ export default function AdminSystemPage() {
     } finally {
       setHealthLoading(false);
     }
+  };
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("system_settings").select("key, value");
+      const map: Record<string, any> = {};
+      for (const r of data ?? []) map[r.key] = r.value;
+      if (map.maintenance_mode) setMaintenance(!!map.maintenance_mode.enabled);
+      if (map.allow_registrations) setAllowReg(map.allow_registrations.enabled !== false);
+      if (map.platform_name?.text) setPlatformName(map.platform_name.text);
+      if (map.platform_color?.color) setColor(map.platform_color.color);
+      let foundUrl = undefined;
+      if (map.backend_url?.url) {
+        setBackendUrl(map.backend_url.url);
+        foundUrl = map.backend_url.url;
+      }
+      setLoading(false);
+      checkHealth(foundUrl);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const upsert = async (key: string, value: any) => {
+    const { error } = await supabase.from("system_settings")
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (error) toast({ title: "ব্যর্থ", description: error.message, variant: "destructive" });
+    else { toast({ title: "সংরক্ষিত হয়েছে" }); refreshSettings(); }
   };
 
   const warmup = async () => {

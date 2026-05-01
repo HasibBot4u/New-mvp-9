@@ -58,6 +58,7 @@ export function EnrollmentCodeModal({ isOpen, chapterId, chapterName, onClose, o
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden relative animate-in fade-in zoom-in duration-200">
         <button 
           onClick={onClose}
+          aria-label="Close dialog"
           className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
         >
           <X className="w-5 h-5" />

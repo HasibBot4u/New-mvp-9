@@ -1,6 +1,6 @@
 import { Suspense, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Float, Environment, MeshDistortMaterial, Sparkles } from "@react-three/drei";
+import { Float, MeshDistortMaterial, Sparkles } from "@react-three/drei";
 import * as THREE from "three";
 
 function Crystal({
@@ -28,11 +28,10 @@ function Crystal({
         <icosahedronGeometry args={[1, 4]} />
         <MeshDistortMaterial
           color={color}
-          roughness={0.15}
-          metalness={0.7}
+          roughness={0.25}
+          metalness={0.4}
           distort={distort}
           speed={1.5}
-          envMapIntensity={1.2}
         />
       </mesh>
     </Float>
@@ -53,7 +52,6 @@ function Scene() {
       <Crystal position={[0, 0.2, -1.2]} color="#7C3AED" speed={0.6} distort={0.5} scale={1.25} />
 
       <Sparkles count={80} scale={[10, 6, 6]} size={2} speed={0.4} color="#ffffff" opacity={0.6} />
-      <Environment preset="night" />
     </>
   );
 }

@@ -91,11 +91,13 @@
   * { @apply border-border; }
 
   *:focus-visible {
-    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--primary)), 0 0 0 4px hsl(var(--background));
+    border-radius: 0.25rem;
   }
   
   button:focus-visible, a:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-    @apply rounded-sm;
+    border-radius: 0.375rem;
   }
 
   html {

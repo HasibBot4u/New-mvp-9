@@ -1,0 +1,13 @@
+[tool.poetry]
+name = "nexusedu-backend"
+version = "0.1.0"
+description = "NexusEdu Backend"
+authors = ["NexusEdu"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "*"
+uvicorn = "*"
+pyrogram = "*"
+tgcrypto = "*"
+httpx = "*"

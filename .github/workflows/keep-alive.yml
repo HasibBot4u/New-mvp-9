@@ -1,0 +1,17 @@
+name: Keep Backend Alive
+
+# This workflow pings the Render backend every 14 minutes
+# to prevent the free-tier service from sleeping.
+on:
+  schedule:
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: curl -sf https://nexusedu-backend-0bjq.onrender.com/api/health || true
+      - name: Ping warmup endpoint
+        run: curl -sf -X POST https://nexusedu-backend-0bjq.onrender.com/api/warmup || true

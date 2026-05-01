@@ -1,11 +1,18 @@
-<div align="center">
+# NexusEdu 🎓
+### তোমার শিক্ষার নতুন দিগন্ত
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+HSC Physics, Chemistry & Higher Math — Online Video Streaming Platform
 
-  <h1>Built with AI Studio</h2>
+## Setup
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+> **Note:** All database schema changes must go through `supabase/migrations/`. Do NOT use standalone SQL scripts.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+### Frontend
+1. `npm install`
+2. Copy `.env.example` to `.env.local` and fill in your values
+3. `npm run dev`
 
-</div>
+### Required Environment Variables (.env.local)
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_API_BASE_URL`

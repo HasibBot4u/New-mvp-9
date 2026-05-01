@@ -1,0 +1,38 @@
+name: Sync to Render Repo
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone render repo
+        run: |
+          git clone https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/HasibBot4u/New-mvp-8.git render-repo
+
+      - name: Copy frontend files (NOT backend files)
+        run: |
+          rsync -av --delete src/ render-repo/src/
+          cp index.html render-repo/index.html
+          cp vite.config.ts render-repo/vite.config.ts
+          cp tailwind.config.ts render-repo/tailwind.config.ts
+          cp tsconfig.json render-repo/tsconfig.json
+          cp package.json render-repo/package.json
+          cp package-lock.json render-repo/package-lock.json || true
+          cp public/ render-repo/public/ -r
+
+      - name: Commit and push
+        run: |
+          cd render-repo
+          git config user.email "sync@nexusedu.auto"
+          git config user.name "NexusEdu Sync Bot"
+          git add -A
+          git diff --cached --quiet || git commit -m "sync: auto-sync from remix repo $(date +%Y-%m-%d-%H%M)"
+          git push origin main

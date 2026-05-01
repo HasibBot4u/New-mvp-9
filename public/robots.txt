@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /admin
+Disallow: /admin/
+Disallow: /watch/
+Disallow: /api/
+Allow: /
+
+Sitemap: https://nexusedu.netlify.app/sitemap.xml

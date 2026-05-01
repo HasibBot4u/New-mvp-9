@@ -1,0 +1,206 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Hind+Siliguri:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===================================================================
+   NEXUSEDU — Cinematic Dark Design System
+   Inspiration: Netflix, Apple TV+, Disney+ — premium streaming feel
+   ALL colors are HSL. Never hardcode colors in components.
+   =================================================================== */
+
+@layer base {
+  :root {
+    /* Surfaces — true black canvas like Netflix */
+    --background: 0 0% 4%;              /* #0A0A0A */
+    --background-elevated: 0 0% 7%;     /* card/panel */
+    --background-overlay: 0 0% 10%;     /* hover, popover */
+    --foreground: 0 0% 98%;
+    --foreground-dim: 0 0% 70%;
+    --foreground-muted: 0 0% 48%;
+
+    /* Brand — molten crimson + amber accent (cinematic, warm) */
+    --primary: 351 89% 54%;             /* electric crimson */
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 351 100% 65%;
+    --accent: 38 95% 58%;               /* warm amber */
+    --accent-foreground: 0 0% 8%;
+
+    /* Semantic */
+    --success: 152 70% 48%;
+    --warning: 38 95% 58%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --info: 210 90% 60%;
+
+    /* Borders / inputs — glass surfaces */
+    --border: 0 0% 14%;
+    --border-strong: 0 0% 22%;
+    --input: 0 0% 12%;
+    --ring: 351 89% 54%;
+
+    /* Mapped shadcn tokens to dark surfaces */
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 98%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 60%;
+
+    --radius: 0.875rem;
+
+    --surface: 0 0% 7%;
+
+    /* Sidebar (admin) */
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 0 0% 80%;
+    --sidebar-primary: 351 89% 54%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 10%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 12%;
+    --sidebar-ring: 351 89% 54%;
+
+    /* Cinematic gradients */
+    --gradient-hero: radial-gradient(ellipse at top, hsl(351 89% 54% / 0.25) 0%, transparent 55%), linear-gradient(180deg, hsl(0 0% 4%) 0%, hsl(0 0% 2%) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(351 89% 54%), hsl(12 95% 58%));
+    --gradient-accent: linear-gradient(135deg, hsl(38 95% 58%), hsl(20 95% 56%));
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 8%) 0%, hsl(0 0% 5%) 100%);
+    --gradient-fade-bottom: linear-gradient(180deg, transparent 0%, hsl(0 0% 4%) 100%);
+    --gradient-fade-top: linear-gradient(0deg, transparent 0%, hsl(0 0% 4%) 100%);
+    --gradient-text: linear-gradient(135deg, hsl(0 0% 100%) 0%, hsl(0 0% 70%) 100%);
+
+    /* Shadows — cinematic glow + depth */
+    --shadow-glow: 0 0 60px hsl(351 89% 54% / 0.4);
+    --shadow-glow-amber: 0 0 60px hsl(38 95% 58% / 0.35);
+    --shadow-elevated: 0 20px 60px -10px hsl(0 0% 0% / 0.6), 0 0 0 1px hsl(0 0% 14%);
+    --shadow-card: 0 8px 30px -6px hsl(0 0% 0% / 0.5);
+    --shadow-poster: 0 30px 80px -20px hsl(0 0% 0% / 0.8), 0 0 0 1px hsl(0 0% 18%);
+
+    /* Motion */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-cinematic: cubic-bezier(0.65, 0, 0.35, 1);
+    --transition-base: 300ms var(--ease-out-expo);
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+  
+  button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
+    @apply rounded-sm;
+  }
+
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "ss01", "cv02", "cv11";
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, hsl(351 89% 54% / 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 110%, hsl(38 95% 58% / 0.05), transparent);
+  }
+
+  /* Custom scrollbar — minimal, cinematic */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: hsl(var(--background)); }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border-strong)); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.6); }
+
+  ::selection { background: hsl(var(--primary) / 0.4); color: hsl(var(--foreground)); }
+
+  /* Main layout container — specific, avoids collision with third-party libs */
+  #root > div[data-layout="app-shell"] {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  /* Primary call-to-action button — high specificity, theme-aware */
+  button[data-variant="primary-cta"],
+  a[data-variant="primary-cta"] {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all;
+  }
+  button[data-variant="primary-cta"]:hover,
+  a[data-variant="primary-cta"]:hover {
+    @apply bg-primary/90 shadow-primary/40 scale-[1.02];
+  }
+  button[data-variant="primary-cta"]:active {
+    @apply scale-[0.98];
+  }
+  button[data-variant="primary-cta"]:focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+
+  /* Bangla typography helper — applied selectively */
+  .font-bangla,
+  .bangla { font-family: 'Hind Siliguri', 'Inter', sans-serif; }
+  .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; letter-spacing: -0.03em; }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: var(--gradient-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gradient-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .glass {
+    background: hsl(0 0% 8% / 0.6);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid hsl(0 0% 100% / 0.06);
+  }
+  .glass-strong {
+    background: hsl(0 0% 6% / 0.85);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid hsl(0 0% 100% / 0.08);
+  }
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .grain::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+
+  .glow-primary { box-shadow: var(--shadow-glow); }
+  .glow-amber   { box-shadow: var(--shadow-glow-amber); }
+}
+
+@layer components {
+  .magnetic-btn {
+    @apply relative inline-flex items-center justify-center font-semibold rounded-full transition-all;
+    transition: transform 400ms var(--ease-out-expo), box-shadow 400ms var(--ease-out-expo);
+  }
+  .magnetic-btn:hover { transform: translateY(-2px); }
+
+  .poster-card {
+    @apply relative overflow-hidden rounded-xl;
+    transition: transform 500ms var(--ease-out-expo), box-shadow 500ms var(--ease-out-expo);
+  }
+  .poster-card:hover { transform: translateY(-6px) scale(1.03); box-shadow: var(--shadow-poster); }
+}

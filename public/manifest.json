@@ -1,0 +1,13 @@
+{
+  "name": "NexusEdu",
+  "short_name": "NexusEdu",
+  "description": "তোমার শিক্ষার নতুন দিগন্ত — HSC অনলাইন ক্লাস",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#e50914",
+  "background_color": "#000000",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/nexusedu-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

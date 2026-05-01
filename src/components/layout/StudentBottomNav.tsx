@@ -1,11 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Search, Bell, UserCircle2 } from "lucide-react";
+import { LayoutDashboard, Library, Bell, UserCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Mobile quick nav — mirrors a subset of the strict sidebar.
 const items = [
-  { to: "/dashboard",       icon: LayoutDashboard, label: "ড্যাশবোর্ড" },
-  { to: "/search",          icon: Search,          label: "সার্চ" },
+  { to: "/dashboard",       icon: LayoutDashboard, label: "হোম" },
+  { to: "/courses",         icon: Library,         label: "বিষয়সমূহ" },
   { to: "/notifications",   icon: Bell,            label: "নোটিফিকেশন" },
   { to: "/profile",         icon: UserCircle2,     label: "প্রোফাইল" },
 ];
@@ -26,7 +26,7 @@ export function StudentBottomNav() {
             }
           >
             <Icon className="w-5 h-5" />
-            <span className="bangla text-[10px] font-medium">{label}</span>
+            <span className="bangla text-[10px] font-medium mt-1">{label}</span>
           </NavLink>
         ))}
       </div>

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
+if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set");
 
 type SourceKind = "youtube" | "drive" | "telegram";
 
@@ -172,6 +173,8 @@ export default function PlayerPage() {
 
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [blobLoading, setBlobLoading] = useState(false);
+  const prevBlobUrlRef = useRef<string | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
   useEffect(() => {
     let active = true;
@@ -191,7 +194,10 @@ export default function PlayerPage() {
       })
       .then(blob => {
         if (!active) return;
-        setBlobUrl(URL.createObjectURL(blob));
+        if (prevBlobUrlRef.current) URL.revokeObjectURL(prevBlobUrlRef.current);
+        const newBlobUrl = URL.createObjectURL(blob);
+        prevBlobUrlRef.current = newBlobUrl;
+        setBlobUrl(newBlobUrl);
         setBlobLoading(false);
       })
       .catch((e) => {
@@ -212,9 +218,9 @@ export default function PlayerPage() {
 
   useEffect(() => {
     return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      if (prevBlobUrlRef.current) URL.revokeObjectURL(prevBlobUrlRef.current);
     };
-  }, [blobUrl]);
+  }, []);
 
   // Notes auto-save (2s after typing pause)
   const onNotesChange = (val: string) => {
@@ -313,22 +319,26 @@ export default function PlayerPage() {
             {video.description && <p className="text-foreground-dim mt-4 max-w-3xl">{video.description}</p>}
           </div>
           {source.type !== 'youtube' && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mt-4 md:mt-0">
               <span className="text-xs text-foreground-muted font-medium">Speed:</span>
-              <select 
-                className="bg-surface border border-border rounded-lg text-sm px-2 py-1 focus:outline-none focus:border-primary"
-                onChange={(e) => {
-                  if (videoRef.current) videoRef.current.playbackRate = parseFloat(e.target.value);
-                }}
-                defaultValue="1"
-              >
-                <option value="0.5">0.5x</option>
-                <option value="0.75">0.75x</option>
-                <option value="1">1x (Normal)</option>
-                <option value="1.25">1.25x</option>
-                <option value="1.5">1.5x</option>
-                <option value="2">2x</option>
-              </select>
+              <div className="flex gap-1">
+                {[0.75, 1, 1.25, 1.5, 2].map(speed => (
+                  <Button
+                    key={speed}
+                    variant={playbackSpeed === speed ? "default" : "ghost"}
+                    size="sm"
+                    className={playbackSpeed === speed ? "bg-primary text-primary-foreground" : ""}
+                    onClick={() => {
+                      if (videoRef.current) {
+                        videoRef.current.playbackRate = speed;
+                        setPlaybackSpeed(speed);
+                      }
+                    }}
+                  >
+                    {speed}x
+                  </Button>
+                ))}
+              </div>
             </div>
           )}
         </div>

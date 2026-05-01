@@ -4,6 +4,7 @@ import { Menu, X } from "lucide-react";
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 const links = [
   { to: "/", label: "Home" },
@@ -16,6 +17,7 @@ export function PublicNavbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
+  const { user, isLoading } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -54,12 +56,22 @@ export function PublicNavbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-2">
-          <Button variant="ghost" asChild className="rounded-full text-foreground-dim hover:text-foreground hover:bg-background-overlay">
-            <Link to="/login">Sign in</Link>
-          </Button>
-          <Button asChild className="rounded-full bg-primary hover:bg-primary-glow text-primary-foreground font-semibold px-5 shadow-glow/40 hover:shadow-glow transition-shadow">
-            <Link to="/signup">Start free</Link>
-          </Button>
+          {isLoading ? (
+            <div className="w-32 h-10 animate-pulse bg-white/5 rounded-full" />
+          ) : user ? (
+            <Button asChild className="rounded-full bg-primary hover:bg-primary-glow text-primary-foreground font-semibold px-5 shadow-glow/40 hover:shadow-glow transition-shadow">
+              <Link to="/dashboard">Dashboard</Link>
+            </Button>
+          ) : (
+            <>
+              <Button variant="ghost" asChild className="rounded-full text-foreground-dim hover:text-foreground hover:bg-background-overlay">
+                <Link to="/login">Sign in</Link>
+              </Button>
+              <Button asChild className="rounded-full bg-primary hover:bg-primary-glow text-primary-foreground font-semibold px-5 shadow-glow/40 hover:shadow-glow transition-shadow">
+                <Link to="/signup">Start free</Link>
+              </Button>
+            </>
+          )}
         </div>
 
         <button
@@ -80,8 +92,14 @@ export function PublicNavbar() {
               </Link>
             ))}
             <div className="flex gap-2 pt-2">
-              <Button variant="outline" asChild className="flex-1 rounded-full"><Link to="/login">Sign in</Link></Button>
-              <Button asChild className="flex-1 rounded-full bg-primary hover:bg-primary-glow"><Link to="/signup">Start free</Link></Button>
+              {isLoading ? null : user ? (
+                <Button asChild className="flex-1 rounded-full bg-primary hover:bg-primary-glow"><Link to="/dashboard">Dashboard</Link></Button>
+              ) : (
+                <>
+                  <Button variant="outline" asChild className="flex-1 rounded-full"><Link to="/login">Sign in</Link></Button>
+                  <Button asChild className="flex-1 rounded-full bg-primary hover:bg-primary-glow"><Link to="/signup">Start free</Link></Button>
+                </>
+              )}
             </div>
           </div>
         </div>

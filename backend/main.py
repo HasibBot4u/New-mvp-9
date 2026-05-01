@@ -34,13 +34,11 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
 # Safe integer conversion — prevents int(None) crash
 try:
-    API_ID = int(API_ID_STR) if API_ID_STR else 0
+    API_ID = int(API_ID_STR)
 except ValueError:
     print("[NexusEdu] FATAL: TELEGRAM_API_ID must be an integer", flush=True)
     sys.exit(1)
 
-TEST_CHANNEL_ID = -1003569793885
-TEST_MESSAGE_ID = 3
 CHUNK_SIZE      = 1024 * 1024        # 1 MB per chunk from Telegram
 CATALOG_TTL     = 300                # 5 min cache
 INITIAL_BUFFER  = 512 * 1024         # 512 KB first response — starts playing fast
@@ -114,11 +112,11 @@ async def verify_supabase_token(authorization: str) -> dict | None:
 
     try:
         supabase_url = os.environ.get("SUPABASE_URL")
-        service_key = os.environ.get("SUPABASE_SERVICE_KEY")
+        anon_key = os.environ.get("SUPABASE_ANON_KEY")
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
                 f"{supabase_url}/auth/v1/user",
-                headers={"Authorization": f"Bearer {token}", "apikey": service_key}
+                headers={"Authorization": f"Bearer {token}", "apikey": anon_key}
             )
             if resp.status_code == 200:
                 user_data = resp.json()
@@ -274,7 +272,7 @@ async def fetch_all_videos(client: httpx.AsyncClient) -> list:
         url = (
             f"{SUPABASE_URL}/rest/v1/videos"
             f"?is_active=eq.true&order=display_order"
-            f"&select=id,chapter_id,title,title_bn,telegram_channel_id,telegram_message_id,source_type,drive_file_id,youtube_video_id,size_mb,duration,display_order"
+            f"&select=id,chapter_id,title,title_bn,source_type,drive_file_id,youtube_video_id,size_mb,duration,display_order"
             f"&offset={offset}&limit=1000"
         )
         for attempt in range(3):
@@ -296,6 +294,43 @@ async def fetch_all_videos(client: httpx.AsyncClient) -> list:
         offset += 1000
     return all_videos
 
+async def fetch_video_secrets(client: httpx.AsyncClient) -> dict:
+    if not SUPABASE_KEY:
+        return {}
+    headers = {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    }
+    secrets = {}
+    offset = 0
+    while True:
+        url = (
+            f"{SUPABASE_URL}/rest/v1/videos?is_active=eq.true"
+            f"&select=id,telegram_channel_id,telegram_message_id"
+            f"&offset={offset}&limit=1000"
+        )
+        for attempt in range(3):
+            try:
+                r = await client.get(url, headers=headers, timeout=30)
+                r.raise_for_status()
+                batch = r.json()
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(2 ** attempt)
+        
+        if not batch:
+            break
+        for v in batch:
+            secrets[v["id"]] = {
+                "channel_id": v.get("telegram_channel_id", ""),
+                "message_id": v.get("telegram_message_id", 0)
+            }
+        if len(batch) < 1000:
+            break
+        offset += 1000
+    return secrets
 
 # ─── CATALOG BUILD ────────────────────────────────────────────
 async def refresh_catalog():
@@ -311,19 +346,21 @@ async def refresh_catalog():
             cycles_task   = fetch_supabase("cycles?is_active=eq.true&order=display_order", client)
             chapters_task = fetch_supabase("chapters?is_active=eq.true&order=display_order", client)
             videos_task   = fetch_all_videos(client)
+            secrets_task  = fetch_video_secrets(client)
 
-            subjects, cycles, chapters, videos = await asyncio.gather(
-                subjects_task, cycles_task, chapters_task, videos_task
+            subjects, cycles, chapters, videos, secrets = await asyncio.gather(
+                subjects_task, cycles_task, chapters_task, videos_task, secrets_task
             )
 
         # Build video_map for O(1) stream lookups
         new_map = {}
         for v in videos:
+            sec = secrets.get(v["id"], {})
             new_map[v["id"]] = {
                 "source_type": v.get("source_type", "telegram"),
                 "drive_file_id": v.get("drive_file_id", ""),
-                "channel_id": v.get("telegram_channel_id", ""),
-                "message_id": v.get("telegram_message_id", 0),
+                "channel_id": sec.get("channel_id", ""),
+                "message_id": sec.get("message_id", 0),
             }
         video_map = new_map
 
@@ -492,7 +529,6 @@ async def lifespan(app: FastAPI):
             await tg.start()
             print("[NexusEdu] Telegram client started successfully.", flush=True)
             await preload_channels()
-            await resolve_channel(TEST_CHANNEL_ID)
         except Exception as e:
             print(f"[NexusEdu] TELEGRAM STARTUP FAILED: {e}", flush=True)
             print("[NexusEdu] Backend starting WITHOUT Telegram. Videos will not stream.", flush=True)
@@ -529,6 +565,52 @@ async def lifespan(app: FastAPI):
 # ─── APP ──────────────────────────────────────────────────────
 app = FastAPI(title="NexusEdu Backend", lifespan=lifespan)
 
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import math
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_upload_size: int = 50 * 1024 * 1024):
+        super().__init__(app)
+        self.max_upload_size = max_upload_size
+
+    async def dispatch(self, request: Request, call_next):
+        if request.headers.get("content-length"):
+            try:
+                content_length = int(request.headers.get("content-length", 0))
+                if content_length > self.max_upload_size:
+                    return JSONResponse({"detail": "Request body too large"}, status_code=413)
+            except ValueError:
+                pass
+        return await call_next(request)
+
+class ConditionalGZipMiddleware:
+    def __init__(self, app, minimum_size: int = 1000):
+        self.app = app
+        self.gzip = GZipMiddleware(app, minimum_size=minimum_size)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path.startswith("/api/stream/"):
+                await self.app(scope, receive, send)
+                return
+        await self.gzip(scope, receive, send)
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(BodySizeLimitMiddleware, max_upload_size=50 * 1024 * 1024)
+app.add_middleware(ConditionalGZipMiddleware, minimum_size=1000)
+
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "https://nexusedu.netlify.app,http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -564,7 +646,11 @@ async def root():
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
-async def health():
+async def health(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(client_ip + "_health", limit=20, window_seconds=60):
+        return JSONResponse({"status": "rate_limited"}, status_code=429)
+
     is_conn = False
     try:
         client = get_active_client()
@@ -626,7 +712,12 @@ def check_rate_limit(client_ip: str, limit: int = 5, window_seconds: int = 60) -
 
 
 @app.get("/api/catalog")
-async def catalog(authorization: str = Header(None)):
+async def catalog(request: Request, authorization: str = Header(None)):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(client_ip + "_catalog", limit=30, window_seconds=60):
+        # We don't raise HTTPException so frontend can fallback easily, but returning 429 is correct
+        raise HTTPException(status_code=429, detail="Too many requests")
+
     auth_val = authorization
     user = await verify_supabase_token(auth_val)
     if not user:
@@ -649,7 +740,11 @@ async def catalog(authorization: str = Header(None)):
 _last_refresh_time = 0.0
 
 @app.get("/api/refresh")
-async def force_refresh():
+async def force_refresh(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(client_ip + "_refresh", limit=5, window_seconds=60):
+        raise HTTPException(status_code=429, detail="Too many refresh requests")
+
     global _last_refresh_time
     now = time.time()
     if now - _last_refresh_time < 60:
@@ -660,7 +755,11 @@ async def force_refresh():
 
 
 @app.api_route("/api/warmup", methods=["GET", "POST"])
-async def warmup():
+async def warmup(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(client_ip + "_warmup", limit=10, window_seconds=60):
+        return {"status": "rate_limited"}
+
     """
     Called by frontend on app startup.
     Triggers catalog refresh if needed.
@@ -671,7 +770,11 @@ async def warmup():
 
 
 @app.get("/api/prefetch/{video_id}")
-async def prefetch_video(video_id: str):
+async def prefetch_video(video_id: str, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(client_ip + "_prefetch", limit=50, window_seconds=60):
+        return {"status": "rate_limited"}
+
     """
     Warms the message cache for a single video without streaming bytes.
     Frontend calls this for every video when a chapter list loads,
@@ -775,13 +878,12 @@ async def stream_video(
     video_id: str,
     request: Request,
     source: str = None,
-    token: str = None,
     authorization: str = Header(None)
 ):
     """
     Stream video from Telegram using MTProto (bypasses 20MB limit)
     """
-    auth_val = authorization or (f"Bearer {token}" if token else "")
+    auth_val = authorization
     user = await verify_supabase_token(auth_val)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
@@ -902,55 +1004,6 @@ async def stream_video(
     except Exception as e:
         print(f"[NexusEdu] Stream endpoint error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-
-@app.get("/api/test-stream")
-async def test_stream(request: Request, token: str = None, authorization: str = Header(None)):
-    """Streams the hardcoded test video — used for diagnostics."""
-    auth_val = authorization or (f"Bearer {token}" if token else "")
-    user = await verify_supabase_token(auth_val)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
-    
-    await resolve_channel(TEST_CHANNEL_ID)
-    try:
-        total, mime_type = await get_file_info(TEST_CHANNEL_ID, TEST_MESSAGE_ID)
-        if not total:
-            raise HTTPException(500, "Test message has no media. Check channel.")
-
-        range_header = request.headers.get("Range")
-        start, end = _parse_range(range_header or "", total)
-
-        # Cap range size per request to 50MB to prevent memory exhaustion
-        MAX_RANGE_SIZE = 50 * 1024 * 1024
-        if end - start + 1 > MAX_RANGE_SIZE:
-            end = start + MAX_RANGE_SIZE - 1
-            
-        length = end - start + 1
-
-        tg_client = get_active_client()
-        if not tg_client:
-            raise HTTPException(status_code=503, detail="No active Pyrogram client found")
-
-        # 4. Stream chunks using the exact same function as our main endpoint
-        return StreamingResponse(
-            _stream_telegram(TEST_CHANNEL_ID, TEST_MESSAGE_ID, start, end, total),
-            status_code=206 if range_header else 200,
-            media_type=mime_type,
-            headers={
-                "Accept-Ranges": "bytes",
-                "Content-Range": f"bytes {start}-{end}/{total}",
-                "Content-Length": str(length),
-                "Content-Type": mime_type,
-                "Cache-Control": "public, max-age=31536000",
-                "X-Content-Type-Options": "nosniff",
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[NexusEdu] Test stream error: {e}")
-        raise HTTPException(500, f"Test stream error: {e}")
 
 
 # ─── RUN ──────────────────────────────────────────────────────

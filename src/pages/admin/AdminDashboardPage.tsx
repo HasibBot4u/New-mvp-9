@@ -17,32 +17,61 @@ interface ActivityRow {
   profiles?: { display_name: string | null } | null;
 }
 
+interface PendingEnrollment {
+  id: string; user_id: string; chapter_id: string; transaction_id: string; amount: number; payment_method: string; status: string; created_at: string;
+  profiles?: { display_name: string | null } | null;
+  chapters?: { name: string; name_bn: string | null } | null;
+}
+
 const fetchDashboardData = async () => {
   const since = startOfDay(subDays(new Date(), 6)).toISOString();
   
-  const [s, w, a] = await Promise.all([
+  const [s, w, a, enr, allActivities] = await Promise.all([
     supabase.rpc("get_admin_stats"),
     supabase.from("watch_history").select("watched_at").gte("watched_at", since),
     supabase.from("activity_logs")
       .select("id, action, created_at, user_id, profiles(display_name)")
       .order("created_at", { ascending: false }).limit(10),
+    supabase.from("pending_enrollments" as any)
+      .select("*, profiles(display_name), chapters(name, name_bn)")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
+    supabase.from("activity_logs")
+      .select("created_at, user_id, action")
+      .gte("created_at", since)
   ]);
 
-  const buckets: Record<string, number> = {};
+  const buckets: Record<string, { dau: Set<string>; watches: number; enrollments: number }> = {};
   for (let i = 6; i >= 0; i--) {
     const d = format(subDays(new Date(), i), "MM/dd");
-    buckets[d] = 0;
+    buckets[d] = { dau: new Set(), watches: 0, enrollments: 0 };
   }
+
   for (const r of (w.data ?? []) as { watched_at: string }[]) {
     const d = format(new Date(r.watched_at), "MM/dd");
-    if (d in buckets) buckets[d]++;
+    if (d in buckets) buckets[d].watches++;
   }
-  const chart = Object.entries(buckets).map(([day, count]) => ({ day, count }));
+
+  for (const log of (allActivities.data ?? []) as any[]) {
+    const d = format(new Date(log.created_at), "MM/dd");
+    if (d in buckets) {
+      if (log.user_id) buckets[d].dau.add(log.user_id);
+      if (log.action === "enrolled_chapter") buckets[d].enrollments++;
+    }
+  }
+
+  const chart = Object.entries(buckets).map(([day, val]) => ({
+    day,
+    watchViews: val.watches,
+    dau: val.dau.size,
+    enrollments: val.enrollments,
+  }));
 
   return {
     stats: (s.data as unknown as Stats) || null,
     chart,
     activity: (a.data ?? []) as unknown as ActivityRow[],
+    pending: (enr.data ?? []) as unknown as PendingEnrollment[],
   };
 };
 
@@ -83,8 +112,33 @@ export default function AdminDashboardPage() {
   const stats = data?.stats;
   const chart = data?.chart ?? [];
   const activity = data?.activity ?? [];
+  const pending = data?.pending ?? [];
   const watchHours = stats ? Math.round(stats.total_watch_seconds / 360) / 10 : 0;
   const isRefreshing = isLoading || isRefetching;
+
+  const handleApprove = async (e: PendingEnrollment) => {
+    const { error: err1 } = await supabase.from("pending_enrollments" as any).update({ status: "approved" }).eq("id", e.id);
+    if (!err1) {
+      const { error: err2 } = await supabase.from("chapter_access" as any).insert({ user_id: e.user_id, chapter_id: e.chapter_id, granted_at: new Date().toISOString() });
+      if (!err2) {
+        await supabase.from("notifications" as any).insert({
+          user_id: e.user_id,
+          title: "Enrollment Approved",
+          title_bn: "এনরোলমেন্ট অ্যাপ্রুভ হয়েছে",
+          body: `Your payment of ৳${e.amount} has been verified and access granted to the chapter.`,
+          body_bn: `আপনার ৳${e.amount} পেমেন্ট ভেরিফাই হয়েছে এবং আপনার কোর্সের অ্যাক্সেস দেয়া হয়েছে।`,
+          type: "system"
+        });
+        toast({ title: "Approved" });
+        refetch();
+      }
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    const { error } = await supabase.from("pending_enrollments" as any).update({ status: "rejected" }).eq("id", id);
+    if (!error) { toast({ title: "Rejected" }); refetch(); }
+  };
 
   const tiles = [
     { label: "মোট ব্যবহারকারী", value: stats?.total_users ?? 0, icon: Users, color: "from-primary to-primary-glow" },
@@ -130,8 +184,8 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-2xl border border-white/5 bg-surface p-5">
-          <h2 className="font-display font-semibold mb-4">গত ৭ দিনের ভিউ</h2>
+        <div className="lg:col-span-2 rounded-2xl border border-white/5 bg-surface p-5 text-sm">
+          <h2 className="font-display font-semibold mb-4 text-base">বিশ্লেষণ (গত ৭ দিন)</h2>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height={256}>
               <BarChart data={chart}>
@@ -139,7 +193,9 @@ export default function AdminDashboardPage() {
                 <XAxis dataKey="day" stroke="hsl(var(--foreground-muted))" fontSize={11} />
                 <YAxis stroke="hsl(var(--foreground-muted))" fontSize={11} allowDecimals={false} />
                 <Tooltip contentStyle={{ background: "hsl(var(--background-elevated))", border: "1px solid hsl(var(--border))", borderRadius: 12 }} />
-                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="watchViews" name="Video Views" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="dau" name="Daily Active Users" fill="hsl(var(--info))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="enrollments" name="New Enrollments" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -159,6 +215,52 @@ export default function AdminDashboardPage() {
             ))}
             {activity.length === 0 && <li className="text-foreground-muted text-sm py-6 text-center">কোনো কার্যকলাপ নেই</li>}
           </ul>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/5 bg-surface p-5">
+        <h2 className="font-display font-semibold mb-4 flex items-center justify-between">
+          <span>Pending Enrollments</span>
+          <span className="text-sm font-normal text-foreground-muted border border-white/10 px-2 py-1 rounded-md">{pending.length} Pending</span>
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead>
+              <tr className="border-b border-white/5 text-foreground-muted">
+                <th className="pb-3 pr-4 font-medium">Student</th>
+                <th className="pb-3 pr-4 font-medium">Chapter</th>
+                <th className="pb-3 pr-4 font-medium">Payment</th>
+                <th className="pb-3 pr-4 font-medium">Method</th>
+                <th className="pb-3 pr-4 font-medium">Date</th>
+                <th className="pb-3 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pending.map(p => (
+                <tr key={p.id} className="border-b border-white/5 last:border-0">
+                  <td className="py-3 pr-4">{p.profiles?.display_name || "Unknown"}</td>
+                  <td className="py-3 pr-4 bangla">{p.chapters?.name_bn || p.chapters?.name}</td>
+                  <td className="py-3 pr-4">
+                    <div className="flex flex-col">
+                      <span>৳{p.amount}</span>
+                      <span className="text-xs text-foreground-muted">{p.transaction_id}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 uppercase">{p.payment_method}</td>
+                  <td className="py-3 pr-4">{format(new Date(p.created_at), "MMM d, HH:mm")}</td>
+                  <td className="py-3 flex gap-2">
+                    <button onClick={() => handleApprove(p)} className="px-3 py-1 bg-success/20 text-success hover:bg-success/30 rounded-md text-xs transition-colors">Approve</button>
+                    <button onClick={() => handleReject(p.id)} className="px-3 py-1 bg-destructive/20 text-destructive hover:bg-destructive/30 rounded-md text-xs transition-colors">Reject</button>
+                  </td>
+                </tr>
+              ))}
+              {pending.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-foreground-muted">No pending enrollments</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

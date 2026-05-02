@@ -44,6 +44,7 @@ export default function ProfilePage() {
         <div>
           <p className="font-display text-xl font-semibold">{profile?.display_name ?? "Student"}</p>
           <p className="text-sm text-foreground-muted">{profile?.email}</p>
+          {profile?.phone && <p className="text-sm text-foreground-muted mt-0.5">{profile.phone}</p>}
           {isAdmin && <span className="inline-flex items-center gap-1 mt-2 text-xs text-accent"><ShieldCheck className="w-3.5 h-3.5" /> Administrator</span>}
         </div>
       </div>

@@ -54,10 +54,15 @@ export default function LoginPage() {
             <Input id="password" type="password" required autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} className="pl-10 h-11" placeholder="••••••••" />
           </div>
         </div>
-        <Button type="submit" disabled={busy} data-variant="primary-cta" className="w-full h-11">
+        <Button type="submit" disabled={busy} data-variant="primary-cta" className="w-full h-11 mb-2">
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in"}
         </Button>
       </form>
+      <div className="mt-4 text-center">
+        <Link to="/phone-login" className="text-sm font-medium text-foreground-muted hover:text-primary transition-colors">
+          Or login with phone number
+        </Link>
+      </div>
     </AuthShell>
   );
 }

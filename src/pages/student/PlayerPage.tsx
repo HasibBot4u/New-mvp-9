@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
+import { trackEvent } from "@/lib/analytics";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
@@ -171,56 +172,7 @@ export default function PlayerPage() {
 
   // Removed auto retry countdown as per F13
 
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [blobLoading, setBlobLoading] = useState(false);
-  const prevBlobUrlRef = useRef<string | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
-
-  useEffect(() => {
-    let active = true;
-    if (source?.type === "telegram" && sessionToken && source.url) {
-      setBlobLoading(true);
-      setBlobUrl(null);
-      setErrored(false);
-      
-      fetch(source.url, {
-        headers: {
-          "Authorization": `Bearer ${sessionToken}`
-        }
-      })
-      .then(res => {
-        if (!res.ok) throw new Error("stream fetch failed");
-        return res.blob();
-      })
-      .then(blob => {
-        if (!active) return;
-        if (prevBlobUrlRef.current) URL.revokeObjectURL(prevBlobUrlRef.current);
-        const newBlobUrl = URL.createObjectURL(blob);
-        prevBlobUrlRef.current = newBlobUrl;
-        setBlobUrl(newBlobUrl);
-        setBlobLoading(false);
-      })
-      .catch((e) => {
-        console.error("Blob load error", e);
-        if (active) {
-          setErrored(true);
-          setBlobLoading(false);
-        }
-      });
-    } else {
-      setBlobUrl(null);
-    }
-    
-    return () => {
-      active = false;
-    };
-  }, [source?.url, source?.type, sessionToken]);
-
-  useEffect(() => {
-    return () => {
-      if (prevBlobUrlRef.current) URL.revokeObjectURL(prevBlobUrlRef.current);
-    };
-  }, []);
 
   // Notes auto-save (2s after typing pause)
   const onNotesChange = (val: string) => {
@@ -267,7 +219,7 @@ export default function PlayerPage() {
       </div>
 
       <div className="container max-w-6xl py-6">
-        <div className="rounded-2xl overflow-hidden bg-black border border-border aspect-video relative">
+        <div className="rounded-2xl overflow-hidden bg-black border border-border aspect-video relative" data-watermark={user?.email}>
           {source.type === "youtube" || source.type === "drive" ? (
             <iframe
               className="w-full h-full"
@@ -286,27 +238,26 @@ export default function PlayerPage() {
                 </Button>
               </div>
             </div>
-          ) : blobLoading || (!blobUrl && source.type === "telegram") ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <Loader2 className="w-8 h-8 animate-spin text-primary mb-4" />
-              <p className="font-bangla text-foreground-muted">ভিডিও লোড হচ্ছে...</p>
-            </div>
           ) : (
             <video
               ref={videoRef}
-              src={source.type === "telegram" ? blobUrl! : source.url}
+              src={source.type === "telegram" ? `${source.url}?token=${sessionToken}` : source.url}
               controls
               autoPlay
               preload="auto"
               className="w-full h-full"
               onLoadedMetadata={() => {
                 setDuration(videoRef.current?.duration || 0);
+                trackEvent("video_play", { video_id: video.id, title: video.title });
                 if (fetchedProgress.current > 0 && videoRef.current) {
                   try { videoRef.current.currentTime = fetchedProgress.current; } catch (e) { console.error("Could not seek to resume position", e); }
                 }
               }}
               onTimeUpdate={handleTimeUpdate}
-              onEnded={handleVideoEnded}
+              onEnded={() => {
+                trackEvent("video_complete", { video_id: video.id, title: video.title });
+                handleVideoEnded();
+              }}
               onError={handleVideoError}
             />
           )}

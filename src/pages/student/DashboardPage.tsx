@@ -48,6 +48,7 @@ function formatHM(seconds: number): string {
 
 import { SubjectCard } from "@/components/cards/SubjectCard";
 import { VideoCard } from "@/components/cards/VideoCard";
+import { getThumbnailUrl } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { user, profile } = useAuth();
@@ -139,7 +140,7 @@ export default function DashboardPage() {
                   key={row.video_id}
                   id={v.id}
                   title={v.title}
-                  thumbnailUrl={v.thumbnail_url}
+                  thumbnailUrl={getThumbnailUrl(v)}
                   duration={v.duration}
                   progressPercent={pct}
                   chapterName={v.chapters?.name}

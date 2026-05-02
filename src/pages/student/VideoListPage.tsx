@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useChapterAccess } from "@/hooks/useChapterAccess";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LazyImage } from "@/components/ui/LazyImage";
+import { getThumbnailUrl } from "@/lib/utils";
 
 export default function VideoListPage() {
   const { chapterId } = useParams();
@@ -102,8 +104,11 @@ export default function VideoListPage() {
                 <Link to={`/watch/${v.id}`}
                   className="flex items-center gap-4 p-4 rounded-2xl bg-background-elevated border border-border hover:border-primary/40 transition-colors group"
                 >
-                  <div className="w-32 aspect-video rounded-lg bg-gradient-card border border-border flex items-center justify-center shrink-0">
-                    <PlayCircle className="w-7 h-7 text-foreground-muted group-hover:text-primary transition-colors" />
+                  <div className="w-32 aspect-video rounded-lg bg-gradient-card border border-border flex items-center justify-center shrink-0 overflow-hidden relative">
+                    <LazyImage src={getThumbnailUrl(v)} alt={v.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" fallbackSrc="/placeholder-video.jpg" />
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                      <PlayCircle className="w-7 h-7 text-white/80 group-hover:text-white transition-colors drop-shadow-md" />
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-foreground-muted">Lesson {String(i + 1).padStart(2, "0")}</p>

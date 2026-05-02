@@ -13,7 +13,7 @@ interface UserRow {
   isAdmin?: boolean;
 }
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 50;
 const sb = supabase;
 
 export default function AdminUsersPage() {

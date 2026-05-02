@@ -6,6 +6,7 @@ import {
   Sigma,
   Bell,
   UserCircle2,
+  FileText
 } from "lucide-react";
 import {
   Sidebar,
@@ -22,12 +23,13 @@ import {
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { cn } from "@/lib/utils";
 
-// STRICT: only these six items, in this order, with exact Bangla labels and routes.
+// STRICT: only these items, in this order, with exact Bangla labels and routes.
 const items = [
   { to: "/dashboard",          label: "ড্যাশবোর্ড",      icon: LayoutDashboard },
   { to: "/subject/physics",    label: "পদার্থবিজ্ঞান",   icon: Atom },
   { to: "/subject/chemistry",  label: "রসায়ন",           icon: FlaskConical },
   { to: "/subject/math",       label: "উচ্চতর গণিত",     icon: Sigma },
+  { to: "/resources",          label: "প্র্যাকটিস শীট",   icon: FileText },
   { to: "/notifications",      label: "নোটিফিকেশন",      icon: Bell },
   { to: "/profile",            label: "আমার প্রোফাইল",   icon: UserCircle2 },
 ];

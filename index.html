@@ -2,7 +2,7 @@
 <html lang="bn">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self' https://*.supabase.co https://*.onrender.com;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self' https://*.supabase.co https://*.onrender.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.sentry.io;" />
     <link rel="preconnect" href="https://jwwlnjcickeignkemvrj.supabase.co" />
     <link rel="dns-prefetch" href="https://nexusedu-backend-0bjq.onrender.com" />
     <link rel="canonical" href="https://nexusedu.netlify.app/" />
@@ -10,6 +10,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#e50914" />
     <link rel="manifest" href="/manifest.json" />
+
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-YOUR_ID"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-YOUR_ID');
+    </script>
 
     <title>NexusEdu — তোমার শিক্ষার নতুন দিগন্ত</title>
     <meta name="description" content="NexusEdu - বাংলাদেশের HSC শিক্ষার্থীদের জন্য সেরা অনলাইন ভিডিও লার্নিং প্ল্যাটফর্ম। পদার্থবিজ্ঞান, রসায়ন, উচ্চতর গণিত।" />

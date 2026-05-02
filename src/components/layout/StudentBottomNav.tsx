@@ -1,11 +1,12 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Library, Bell, UserCircle2 } from "lucide-react";
+import { LayoutDashboard, Library, Bell, UserCircle2, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Mobile quick nav — mirrors a subset of the strict sidebar.
 const items = [
   { to: "/dashboard",       icon: LayoutDashboard, label: "হোম" },
   { to: "/courses",         icon: Library,         label: "বিষয়সমূহ" },
+  { to: "/resources",       icon: FileText,        label: "শীট" },
   { to: "/notifications",   icon: Bell,            label: "নোটিফিকেশন" },
   { to: "/profile",         icon: UserCircle2,     label: "প্রোফাইল" },
 ];
@@ -13,7 +14,7 @@ const items = [
 export function StudentBottomNav() {
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden glass-strong border-t border-border/50">
-      <div className="grid grid-cols-4 h-16">
+      <div className="grid grid-cols-5 h-16">
         {items.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}

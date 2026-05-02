@@ -110,6 +110,11 @@ async def verify_supabase_token(authorization: str) -> dict | None:
     token = authorization[7:]
     
     now = time.time()
+    
+    # Token cache cleanup
+    if len(_TOKEN_CACHE) > 10000:
+        _TOKEN_CACHE.clear()
+        
     if token in _TOKEN_CACHE:
         cached_user, expires_at = _TOKEN_CACHE[token]
         if now < expires_at:
@@ -481,21 +486,21 @@ async def ensure_telegram_connected() -> bool:
             logger.info(f"[System] Primary reconnect failed: {e}")
         # Try secondary as fallback
         if SESSION_STRING_2:
-        try:
-            if tg2 is not None:
-                try:
-                    await asyncio.wait_for(tg2.stop(), timeout=5)
-                except Exception:
-                    pass
-            tg2 = Client("nexusedu_session2", api_id=API_ID, api_hash=API_HASH,
-                          session_string=SESSION_STRING_2, in_memory=True)
-            await asyncio.wait_for(tg2.start(), timeout=30)
-            logger.info("[NexusEdu] Secondary Telegram connected as fallback.")
-            _tg_check_ok = True
-            _tg_check_ts = now
-            return True
-        except Exception as e2:
-            logger.info(f"[NexusEdu] Secondary reconnect also failed: {e2}")
+            try:
+                if tg2 is not None:
+                    try:
+                        await asyncio.wait_for(tg2.stop(), timeout=5)
+                    except Exception:
+                        pass
+                tg2 = Client("nexusedu_session2", api_id=API_ID, api_hash=API_HASH,
+                              session_string=SESSION_STRING_2, in_memory=True)
+                await asyncio.wait_for(tg2.start(), timeout=30)
+                logger.info("[NexusEdu] Secondary Telegram connected as fallback.")
+                _tg_check_ok = True
+                _tg_check_ts = now
+                return True
+            except Exception as e2:
+                logger.info(f"[NexusEdu] Secondary reconnect also failed: {e2}")
     _tg_check_ok = False
     return False
 
@@ -595,6 +600,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; "
+            "frame-src https://www.youtube.com https://drive.google.com; "
+            "media-src 'self' blob:; "
+            "img-src 'self' https: data:; "
+            "connect-src 'self' https://*.supabase.co https://*.onrender.com https://api.ipify.org;"
+        )
         return response
 
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
@@ -895,12 +908,13 @@ from fastapi import FastAPI, HTTPException, Request, Header
 async def stream_video(
     video_id: str,
     request: Request,
+    token: str = None,
     authorization: str = Header(None)
 ):
     """
     Stream video from Telegram using MTProto (bypasses 20MB limit)
     """
-    auth_val = authorization
+    auth_val = authorization or (f"Bearer {token}" if token else None)
     user = await verify_supabase_token(auth_val)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
@@ -1024,6 +1038,33 @@ async def stream_video(
         logger.info(f"[NexusEdu] Stream endpoint error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+
+@app.post("/api/admin/verify")
+async def verify_admin(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    user = await verify_supabase_token(auth_header)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        supabase_url = os.environ.get("SUPABASE_URL")
+        anon_key = os.environ.get("SUPABASE_ANON_KEY")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{supabase_url}/rest/v1/profiles?select=role&id=eq.{user['sub']}",
+                headers={"apikey": anon_key, "Authorization": auth_header}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0 and data[0].get("role") == "admin":
+                    return {"is_admin": True}
+    except Exception as e:
+        logger.error(f"Error checking admin status: {e}")
+        
+    return {"is_admin": False}
 
 # ─── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":

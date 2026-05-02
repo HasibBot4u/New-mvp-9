@@ -18,12 +18,12 @@ export default function AdminSystemPage() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [health, setHealth] = useState<{ ok: boolean; data: any } | null>(null);
 
-  const checkHealth = async (urlOverride?: string) => {
+  const checkHealth = async () => {
     setHealthLoading(true);
     const envBackendUrl = import.meta.env.VITE_API_BASE_URL as string;
-    const healthCheckUrl = envBackendUrl || urlOverride || backendUrl;
+    const healthCheckUrl = envBackendUrl;
     if (!healthCheckUrl) {
-      setHealth({ ok: false, data: { error: "VITE_API_BASE_URL or backendUrl is not set." } });
+      setHealth({ ok: false, data: { error: "VITE_API_BASE_URL is not set." } });
       setHealthLoading(false);
       return;
     }
@@ -47,15 +47,12 @@ export default function AdminSystemPage() {
       if (map.allow_registrations) setAllowReg(map.allow_registrations.enabled !== false);
       if (map.platform_name?.text) setPlatformName(map.platform_name.text);
       if (map.platform_color?.color) setColor(map.platform_color.color);
-      let foundUrl = undefined;
       if (map.backend_url?.url) {
         setBackendUrl(map.backend_url.url);
-        foundUrl = map.backend_url.url;
       }
       setLoading(false);
-      checkHealth(foundUrl);
+      checkHealth();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const upsert = async (key: string, value: any) => {

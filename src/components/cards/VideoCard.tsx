@@ -18,7 +18,7 @@ export function VideoCard({ id, title, thumbnailUrl, duration, progressPercent, 
     <>
       <div className="aspect-video bg-background-overlay relative overflow-hidden">
         {thumbnailUrl ? (
-          <LazyImage src={thumbnailUrl} alt={title} className="w-full h-full group-hover:scale-105 transition-transform" />
+          <LazyImage src={thumbnailUrl} alt={title} className="w-full h-full group-hover:scale-105 transition-transform" fallbackSrc="/placeholder-video.jpg" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-foreground-muted">
             <Play className="w-12 h-12" />

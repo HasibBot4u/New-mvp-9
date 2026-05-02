@@ -2,6 +2,11 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Users, BookOpen, Megaphone, Radio, ArrowLeft, LogOut, ScrollText, ServerCog, Ticket } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { NexusLogo } from "@/components/brand/NexusLogo";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
+if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
 
 const items = [
   { to: "/admin", end: true, icon: LayoutDashboard, label: "Overview" },
@@ -17,6 +22,29 @@ const items = [
 export function AdminLayout() {
   const { signOut } = useAuth();
   const nav = useNavigate();
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        if (mounted) nav("/login");
+        return;
+      }
+      fetch(`${API_BASE}/api/admin/verify`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${session.access_token}` },
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (mounted && !d.is_admin) nav("/dashboard");
+      })
+      .catch(() => {
+        if (mounted) nav("/dashboard");
+      });
+    });
+    return () => { mounted = false; };
+  }, [nav]);
+
   return (
     <div data-layout="app-shell" className="min-h-screen bg-background grid grid-cols-1 md:grid-cols-[260px_1fr]">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-[999] bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium">

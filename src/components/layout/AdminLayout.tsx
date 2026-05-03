@@ -1,9 +1,11 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, BookOpen, Megaphone, Radio, ArrowLeft, LogOut, ScrollText, ServerCog, Ticket } from "lucide-react";
+import { LayoutDashboard, Users, BookOpen, Megaphone, Radio, ArrowLeft, LogOut, ScrollText, ServerCog, Ticket, Database, HardDrive, RefreshCcw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { NexusLogo } from "@/components/brand/NexusLogo";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useCatalog } from "@/contexts/CatalogContext";
+import { format } from "date-fns";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
@@ -22,6 +24,16 @@ const items = [
 export function AdminLayout() {
   const { signOut } = useAuth();
   const nav = useNavigate();
+  const { catalog } = useCatalog();
+  const [lastSync] = useState<Date>(new Date());
+
+  const totalVids = catalog?.subjects.reduce((acc, s) => {
+    return acc + s.cycles.reduce((acc2, cy) => {
+      return acc2 + cy.chapters.reduce((acc3, ch) => {
+        return acc3 + ch.videos.length;
+      }, 0);
+    }, 0);
+  }, 0) ?? 0;
 
   useEffect(() => {
     let mounted = true;
@@ -55,7 +67,7 @@ export function AdminLayout() {
           <NexusLogo size="sm" href="/admin" />
           <span className="text-[10px] uppercase tracking-widest text-foreground-muted px-1.5 py-0.5 rounded bg-primary/15 text-primary ml-1">Admin</span>
         </div>
-        <nav className="flex-1 flex flex-col gap-1">
+        <nav className="flex-1 flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-200px)]">
           {items.map((it) => (
             <NavLink key={it.to} to={it.to} end={it.end as any}
               className={({ isActive }) =>
@@ -67,6 +79,23 @@ export function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+        
+        {/* Status bar */}
+        <div className="mt-auto pt-4 pb-4 border-t border-white/5 space-y-3">
+          <div className="flex items-center justify-between text-xs text-foreground-muted px-2">
+            <div className="flex items-center gap-1.5"><Database className="w-3.5 h-3.5" /> Total Videos</div>
+            <span className="font-mono">{totalVids}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs text-foreground-muted px-2">
+            <div className="flex items-center gap-1.5"><HardDrive className="w-3.5 h-3.5" /> Storage</div>
+            <span className="font-mono">~{Math.round(totalVids * 1.2)}GB</span>
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-foreground-dim px-2 pt-2 border-t border-white/5">
+            <div className="flex items-center gap-1"><RefreshCcw className="w-3 h-3" /> Sync</div>
+            <span>{format(lastSync, "HH:mm")}</span>
+          </div>
+        </div>
+
         <div className="flex flex-col gap-1">
           <button onClick={() => nav("/dashboard")} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground-dim hover:text-foreground hover:bg-white/5">
             <ArrowLeft className="w-4 h-4" /> Back to app

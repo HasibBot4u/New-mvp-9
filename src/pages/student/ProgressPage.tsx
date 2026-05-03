@@ -27,7 +27,6 @@ export default function ProgressPage() {
       .select("video_id, progress_seconds, progress_percent, completed, updated_at, watched_at")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
-      .limit(100)
       .then(({ data }) => { setRows((data ?? []) as unknown as Row[]); setLoading(false); });
   }, [user]);
 

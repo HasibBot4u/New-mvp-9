@@ -7,10 +7,11 @@ import { useAuth } from "@/contexts/AuthContext";
 export interface CatalogChapter extends Chapter { videos: Video[]; }
 export interface CatalogCycle extends Cycle { chapters: CatalogChapter[]; }
 export interface CatalogSubject extends Subject { cycles: CatalogCycle[]; }
-export interface Catalog { subjects: CatalogSubject[]; totalVideos: number; }
+export interface Catalog { subjects: CatalogSubject[]; totalVideos: number; videoMap: Map<string, Video>; }
 
 interface Ctx {
   catalog: Catalog | null;
+  videoMap: Map<string, Video> | null;
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -88,7 +89,12 @@ const fetchCatalog = async () => {
     cycles: cyclesBySubject.get(subj.id) || []
   }));
   
-  return { subjects: built, totalVideos: videos.length } as Catalog;
+  const videoMap = new Map<string, Video>();
+  for (const vi of videos) {
+    videoMap.set(vi.id, vi);
+  }
+
+  return { subjects: built, totalVideos: videos.length, videoMap } as Catalog;
 };
 
 export function CatalogProvider({ children }: { children: ReactNode }) {
@@ -108,7 +114,9 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     await refetch();
   };
 
-  return <CatalogCtx.Provider value={{ catalog, isLoading, error, refresh }}>{children}</CatalogCtx.Provider>;
+  const videoMap = catalog?.videoMap ?? null;
+
+  return <CatalogCtx.Provider value={{ catalog, videoMap, isLoading, error, refresh }}>{children}</CatalogCtx.Provider>;
 }
 
 export function useCatalog() {

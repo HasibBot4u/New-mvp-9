@@ -27,7 +27,7 @@ export function SubjectModal({ isOpen, onClose, onSave, defaultValues }: any) {
           <div><Label htmlFor="s-namebn">Bengali Name (Optional)</Label><Input id="s-namebn" value={nameBn} onChange={e => setNameBn(e.target.value)} /></div>
           <div><Label htmlFor="s-icon">Icon (Emoji)</Label><Input id="s-icon" value={icon} onChange={e => setIcon(e.target.value)} /></div>
           <div><Label htmlFor="s-color">Hex Color</Label><Input id="s-color" value={color} onChange={e => setColor(e.target.value)} /></div>
-          <DialogFooter><Button type="submit">Save</Button></DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -50,7 +50,7 @@ export function CycleModal({ isOpen, onClose, onSave, defaultValues }: any) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><Label htmlFor="cy-name">Name</Label><Input id="cy-name" value={name} onChange={e => setName(e.target.value)} required /></div>
           <div><Label htmlFor="cy-namebn">Bengali Name</Label><Input id="cy-namebn" value={nameBn} onChange={e => setNameBn(e.target.value)} /></div>
-          <DialogFooter><Button type="submit">Save</Button></DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -81,7 +81,7 @@ export function ChapterModal({ isOpen, onClose, onSave, defaultValues }: any) {
             <input type="checkbox" id="req" checked={requires} onChange={e => setRequires(e.target.checked)} />
             <Label htmlFor="req">Requires Enrollment Code</Label>
           </div>
-          <DialogFooter><Button type="submit">Save</Button></DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -146,13 +146,14 @@ export function VideoModal({ isOpen, onClose, onSave, defaultValues }: any) {
             <Input id="v-thumb" value={thumb} onChange={e => setThumb(e.target.value)} placeholder="https://..." />
             {thumb && <img src={thumb} alt="Preview" className="mt-2 w-32 aspect-video object-cover rounded-md border border-white/10" />}
           </div>
-          <DialogFooter><Button type="submit">Save</Button></DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   );
 }
 
+import { DragDropUpload } from "@/components/DragDropUpload";
 import { supabase } from "@/integrations/supabase/client";
 
 export function ResourceModal({ isOpen, onClose, onSave, defaultValues }: any) {
@@ -162,10 +163,7 @@ export function ResourceModal({ isOpen, onClose, onSave, defaultValues }: any) {
   const [pdfUrl, setPdfUrl] = useState(defaultValues?.pdf_url || "");
   const [uploading, setUploading] = useState(false);
 
-  const handleFileUpload = async (e: any) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
+  const handleFileUpload = async (file: File) => {
     setUploading(true);
     const fileExt = file.name.split('.').pop();
     const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
@@ -200,17 +198,16 @@ export function ResourceModal({ isOpen, onClose, onSave, defaultValues }: any) {
           <div><Label htmlFor="r-drive">Drive File ID (For PDF preview/download)</Label><Input id="r-drive" value={driveId} onChange={e => setDriveId(e.target.value)} /></div>
           <div>
             <Label htmlFor="r-url">Direct PDF URL or File Upload</Label>
-            <div className="flex gap-2">
-              <Input id="r-url" value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} placeholder="https://..." className="flex-1" />
-              <div className="relative overflow-hidden w-24">
-                <Button type="button" variant="secondary" className="w-full absolute inset-0 text-xs" disabled={uploading}>
-                  {uploading ? 'Uploading...' : 'Upload'}
-                </Button>
-                <input type="file" accept=".pdf" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" disabled={uploading} />
-              </div>
+            <div className="flex flex-col gap-2 mt-2">
+              <Input id="r-url" value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} placeholder="https://..." />
+              {uploading ? (
+                <div className="p-4 text-center text-sm text-muted-foreground border-2 border-dashed rounded-lg">Uploading...</div>
+              ) : (
+                <DragDropUpload onUpload={handleFileUpload} />
+              )}
             </div>
           </div>
-          <DialogFooter><Button type="submit" disabled={uploading}>Save</Button></DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit" disabled={uploading}>Save</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

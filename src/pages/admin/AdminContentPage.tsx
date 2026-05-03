@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SubjectModal, CycleModal, ChapterModal, VideoModal, ResourceModal } from "./AdminContentModals";
 import { EntityCard } from "@/components/ui/EntityCard";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { VirtualVideoGrid } from '@/components/ui/VirtualVideoGrid';
 
 interface SubjectRow { id: string; name: string; name_bn: string | null; slug: string; icon: string | null; color: string | null; display_order: number; is_active: boolean; }
 interface CycleRow { id: string; subject_id: string; name: string; name_bn: string | null; display_order: number; is_active: boolean; }
@@ -299,17 +300,11 @@ export default function AdminContentPage() {
           
           <div className="flex-1 overflow-y-auto p-2 space-y-2">
             {activeContentType === 'videos' ? (
-              <>
-                {paginatedVideos.map(v => (
-                  <EntityCard
-                    key={v.id}
-                    title={v.title}
-                    subtitle={v.source_type}
-                    onEdit={() => setModalState({ type: 'video', data: { id: v.id, defaultValues: v } })}
-                    onDelete={() => setDeleteData({ table: "videos", id: v.id })}
-                  />
-                ))}
-              </>
+              <VirtualVideoGrid
+                videos={paginatedVideos}
+                onEdit={(v: any) => setModalState({ type: 'video', data: { id: v.id, defaultValues: v } })}
+                onDelete={(v: any) => setDeleteData({ table: 'videos', id: v.id })}
+              />
             ) : (
               <>
                 {resources

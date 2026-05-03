@@ -12,6 +12,7 @@ import sys
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
 from collections import OrderedDict
+from functools import wraps
 
 import httpx
 import uvicorn
@@ -20,6 +21,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, Response, RedirectResponse
 from pyrogram import Client
+from pyrogram.errors import FloodWait
+
+def with_retry(max_retries=3, base_delay=1):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
+        return wrapper
+    return decorator
 
 # ─── CONFIG ───────────────────────────────────────────────────
 def _require_env(key: str) -> str:
@@ -36,6 +53,33 @@ SESSION_STRING_2 = os.environ.get("PYROGRAM_SESSION_STRING_2", "").strip()
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+
+CHANNEL_MAP = {
+    # Physics C1-C6
+    'physics-c1': int(os.getenv('PHY_C1_CHANNEL_ID', '0')),
+    'physics-c2': int(os.getenv('PHY_C2_CHANNEL_ID', '0')),
+    'physics-c3': int(os.getenv('PHY_C3_CHANNEL_ID', '0')),
+    'physics-c4': int(os.getenv('PHY_C4_CHANNEL_ID', '0')),
+    'physics-c5': int(os.getenv('PHY_C5_CHANNEL_ID', '0')),
+    'physics-c6': int(os.getenv('PHY_C6_CHANNEL_ID', '0')),
+    # Chemistry C1-C6
+    'chemistry-c1': int(os.getenv('CHE_C1_CHANNEL_ID', '0')),
+    'chemistry-c2': int(os.getenv('CHE_C2_CHANNEL_ID', '0')),
+    'chemistry-c3': int(os.getenv('CHE_C3_CHANNEL_ID', '0')),
+    'chemistry-c4': int(os.getenv('CHE_C4_CHANNEL_ID', '0')),
+    'chemistry-c5': int(os.getenv('CHE_C5_CHANNEL_ID', '0')),
+    'chemistry-c6': int(os.getenv('CHE_C6_CHANNEL_ID', '0')),
+    # Higher Math C1-C6
+    'math-c1': int(os.getenv('HM_C1_CHANNEL_ID', '0')),
+    'math-c2': int(os.getenv('HM_C2_CHANNEL_ID', '0')),
+    'math-c3': int(os.getenv('HM_C3_CHANNEL_ID', '0')),
+    'math-c4': int(os.getenv('HM_C4_CHANNEL_ID', '0')),
+    'math-c5': int(os.getenv('HM_C5_CHANNEL_ID', '0')),
+    'math-c6': int(os.getenv('HM_C6_CHANNEL_ID', '0')),
+}
+
+def get_channel_for_cycle(cycle_slug: str) -> int:
+    return CHANNEL_MAP.get(cycle_slug, int(os.getenv('DEFAULT_CHANNEL_ID', '0')))
 
 # Safe integer conversion — prevents int(None) crash
 try:
@@ -102,23 +146,17 @@ catalog_lock = asyncio.Lock()
 
 import time
 
-_TOKEN_CACHE = {}
+_TOKEN_CACHE = LRUDict(max_size=5000, ttl_seconds=300)
 
 async def verify_supabase_token(authorization: str) -> dict | None:
     if not authorization or not authorization.startswith("Bearer "):
         return None
     token = authorization[7:]
     
-    now = time.time()
-    
-    # Token cache cleanup
-    if len(_TOKEN_CACHE) > 10000:
-        _TOKEN_CACHE.clear()
-        
-    if token in _TOKEN_CACHE:
-        cached_user, expires_at = _TOKEN_CACHE[token]
-        if now < expires_at:
-            return cached_user
+    try:
+        return _TOKEN_CACHE.get(token)
+    except KeyError:
+        pass
 
     try:
         supabase_url = os.environ.get("SUPABASE_URL")
@@ -130,7 +168,7 @@ async def verify_supabase_token(authorization: str) -> dict | None:
             )
             if resp.status_code == 200:
                 user_data = resp.json()
-                _TOKEN_CACHE[token] = (user_data, now + 300)
+                _TOKEN_CACHE[token] = user_data
                 return user_data
             return None
     except Exception:
@@ -493,7 +531,7 @@ async def ensure_telegram_connected() -> bool:
                     except Exception:
                         pass
                 tg2 = Client("nexusedu_session2", api_id=API_ID, api_hash=API_HASH,
-                              session_string=SESSION_STRING_2, in_memory=True)
+                              session_string=SESSION_STRING_2, in_memory=True, timeout=8)
                 await asyncio.wait_for(tg2.start(), timeout=30)
                 logger.info("[NexusEdu] Secondary Telegram connected as fallback.")
                 _tg_check_ok = True
@@ -537,6 +575,7 @@ async def lifespan(app: FastAPI):
                 api_hash=api_hash,
                 session_string=session,
                 in_memory=True,
+                timeout=8
             )
             await tg.start()
             logger.info("[NexusEdu] Telegram client started successfully.")
@@ -550,7 +589,7 @@ async def lifespan(app: FastAPI):
     if SESSION_STRING_2 and API_ID and API_HASH:
         try:
             tg2 = Client("nexusedu_session2", api_id=API_ID, api_hash=API_HASH,
-                          session_string=SESSION_STRING_2, in_memory=True)
+                          session_string=SESSION_STRING_2, in_memory=True, timeout=8)
             await asyncio.wait_for(tg2.start(), timeout=30)
             logger.info("[NexusEdu] Secondary Telegram client started.")
         except Exception as e:
@@ -602,11 +641,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
             "frame-src https://www.youtube.com https://drive.google.com; "
             "media-src 'self' blob:; "
-            "img-src 'self' https: data:; "
-            "connect-src 'self' https://*.supabase.co https://*.onrender.com https://api.ipify.org;"
+            "img-src 'self' https: data: blob:; "
+            "connect-src 'self' https://*.supabase.co https://*.onrender.com;"
         )
         return response
 
@@ -655,6 +695,17 @@ app.add_middleware(
 )
 
 
+@with_retry(max_retries=5, base_delay=2)
+async def safe_upload_video(channel_id, file_path, caption):
+    client = get_active_client()
+    if not client:
+        raise Exception("No active Telegram client.")
+    try:
+        return await client.send_video(channel_id, file_path, caption=caption)
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        raise
+
 # ─── STREAMING CORE ───────────────────────────────────────────
 def get_active_client() -> Optional[Client]:
     """Return the first connected Telegram client available."""
@@ -675,6 +726,54 @@ def get_active_client() -> Optional[Client]:
 async def root():
     return {"service": "NexusEdu Backend", "version": "v1.1.0", "status": "running"}
 
+import io
+
+@app.get("/api/thumbnail/{video_id}")
+async def get_thumbnail(video_id: str, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if getattr(check_rate_limit, "__call__", None) and not check_rate_limit(client_ip + "_thumbnail", limit=100, window_seconds=60):
+        # We handle this manually here because we want to return a placeholder image on failure/rate limit,
+        # but 429 is fine. Let's return the placeholder.
+        return RedirectResponse("/placeholder-video.jpg")
+    
+    if video_id not in video_map:
+        await refresh_catalog()
+    if video_id not in video_map:
+        return RedirectResponse("/placeholder-video.jpg")
+        
+    info = video_map[video_id]
+    if info.get("source_type") != "telegram":
+        return RedirectResponse("/placeholder-video.jpg")
+        
+    cid_str = info.get("channel_id", "")
+    message_id = info.get("message_id", 0)
+    
+    if not cid_str or not message_id:
+        return RedirectResponse("/placeholder-video.jpg")
+        
+    try:
+        cid = int(cid_str)
+        await resolve_channel(cid)
+        msg = await get_message(cid, message_id)
+        if hasattr(msg, 'empty') and msg.empty:
+            return RedirectResponse("/placeholder-video.jpg")
+            
+        media = msg.video or msg.document
+        if not getattr(media, 'thumbs', None):
+            return RedirectResponse("/placeholder-video.jpg")
+            
+        client = get_active_client()
+        if client is None:
+            return RedirectResponse("/placeholder-video.jpg")
+            
+        thumb_bytes = await client.download_media(media.thumbs[0].file_id, in_memory=True)
+        return StreamingResponse(
+            io.BytesIO(thumb_bytes.getbuffer()),
+            media_type="image/jpeg"
+        )
+    except Exception as e:
+        logger.info(f"[NexusEdu] Thumbnail fetch error: {e}")
+        return RedirectResponse("/placeholder-video.jpg")
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health(request: Request):
@@ -728,9 +827,24 @@ async def health(request: Request):
 # Simple rate limiter for endpoints
 import time
 rate_limits = LRUDict(max_size=5000, ttl_seconds=3600)
+global_rate_limits = LRUDict(max_size=5000, ttl_seconds=3600)
 
 def check_rate_limit(client_ip: str, limit: int = 5, window_seconds: int = 60) -> bool:
     now = time.time()
+    
+    # Extract base IP if it has an endpoint suffix
+    base_ip = client_ip.split('_')[0]
+    
+    # 1. Global IP Limit (100 req / hour)
+    global_times = global_rate_limits.get(base_ip, [])
+    global_times = [t for t in global_times if now - t < 3600]
+    if len(global_times) >= 100:
+        global_rate_limits[base_ip] = global_times
+        return False
+    global_times.append(now)
+    global_rate_limits[base_ip] = global_times
+
+    # 2. Endpoint Specific Limit
     times = rate_limits.get(client_ip, [])
     # Clean up old timestamps
     times = [t for t in times if now - t < window_seconds]
@@ -742,7 +856,31 @@ def check_rate_limit(client_ip: str, limit: int = 5, window_seconds: int = 60) -
     return True
 
 
-@app.get("/api/catalog")
+channel_usage_stats = {}
+
+@app.api_route("/api/channels/health", methods=["GET"])
+async def channel_health(request: Request, authorization: str = Header(None)):
+    auth_val = authorization
+    user = await verify_supabase_token(auth_val)
+    if not user:
+        raise HTTPException(status_code=401, detail="Auth required")
+        
+    client = get_active_client()
+    if not client:
+        return {"status": "error", "error": "No telegram client active"}
+        
+    results = {}
+    for name, cid in CHANNEL_MAP.items():
+        if not cid:
+            continue
+        try:
+            chan = await client.get_chat(cid)
+            usage = channel_usage_stats.get(cid, 0)
+            results[name] = {"status": "ok", "title": chan.title, "members": chan.members_count or 0, "usage": usage}
+        except Exception as e:
+            results[name] = {"status": "error", "error": str(e)}
+            
+    return {"status": "ok", "channels": results}
 async def catalog(request: Request, authorization: str = Header(None)):
     client_ip = request.client.host if request.client else "unknown"
     if not check_rate_limit(client_ip + "_catalog", limit=30, window_seconds=60):
@@ -959,6 +1097,8 @@ async def stream_video(
 
         channel_id = int(channel_id_str)
         message_id = int(message_id_str)
+        
+        channel_usage_stats[channel_id] = channel_usage_stats.get(channel_id, 0) + 1
         
         await resolve_channel(channel_id)
         

@@ -2,6 +2,7 @@ import { Link, useParams, Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronRight, ArrowLeft, Layers, Atom, FlaskConical, Sigma } from "lucide-react";
 import { useCatalog } from "@/contexts/CatalogContext";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const IconMap: Record<string, React.ElementType> = {
   Atom: Atom,
@@ -13,7 +14,15 @@ const IconMap: Record<string, React.ElementType> = {
 export default function SubjectPage() {
   const { subjectSlug } = useParams();
   const { catalog, isLoading } = useCatalog();
-  if (isLoading) return <div className="container py-20 text-center text-foreground-muted">Loading…</div>;
+  if (isLoading) return (
+    <div className="container py-20 space-y-4">
+      <Skeleton className="h-40 w-full rounded-2xl" />
+      <Skeleton className="h-8 w-1/3 mt-6" />
+      <div className="grid md:grid-cols-2 gap-3 mt-4">
+        {[1,2,3,4].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
+      </div>
+    </div>
+  );
   const subject = catalog?.subjects.find(s => s.slug === subjectSlug);
   if (!subject) return <Navigate to="/dashboard" replace />; // Redirect to dashboard instead of courses
 

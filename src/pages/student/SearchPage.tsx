@@ -51,8 +51,16 @@ export default function SearchPage() {
         });
       }));
     });
-    return { subjects, chapters: chapters.slice(0, 50), videos: videos.slice(0, 100) };
+    return { subjects, chapters, videos };
   }, [catalog, debounced]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setQ("");
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const totalCount = subjects.length + chapters.length + videos.length;
   const hasQuery = debounced.length >= 2;

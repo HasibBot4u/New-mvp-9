@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Loader2, RotateCw, StickyNote, ChevronDown, ChevronUp } from "lucide-react";
+import { useSwipeable } from "react-swipeable";
 import { useCatalog } from "@/contexts/CatalogContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -42,17 +43,21 @@ export default function PlayerPage() {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
 
-  const { video, chapter } = useMemo(() => {
+  const { video, chapter, nextVideoId, prevVideoId } = useMemo(() => {
     let foundVideo: any = null;
     let foundChapter: any = null;
+    let next: string | null = null;
+    let prev: string | null = null;
     if (catalog && videoId) {
       for (const s of catalog.subjects) {
         for (const cyc of s.cycles) {
           for (const ch of cyc.chapters) {
-            for (const vid of ch.videos) {
-              if (vid.id === videoId) {
-                foundVideo = vid;
+            for (let i = 0; i < ch.videos.length; i++) {
+              if (ch.videos[i].id === videoId) {
+                foundVideo = ch.videos[i];
                 foundChapter = ch;
+                if (i > 0) prev = ch.videos[i - 1].id;
+                if (i < ch.videos.length - 1) next = ch.videos[i + 1].id;
                 break;
               }
             }
@@ -63,8 +68,35 @@ export default function PlayerPage() {
         if (foundVideo) break;
       }
     }
-    return { video: foundVideo, chapter: foundChapter };
+    return { video: foundVideo, chapter: foundChapter, nextVideoId: next, prevVideoId: prev };
   }, [catalog, videoId]);
+
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: () => { if (nextVideoId) nav(`/watch/${nextVideoId}`, { replace: true }); },
+    onSwipedRight: () => { if (prevVideoId) nav(`/watch/${prevVideoId}`, { replace: true }); },
+    preventScrollOnSwipe: true,
+    trackMouse: false
+  });
+
+  const lastTapRef = useRef<number>(0);
+  const handleTap = (direction: 'left' | 'right') => (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+      // Double tap confirmed
+      if (videoRef.current) {
+        if (direction === 'left') {
+          videoRef.current.currentTime -= 10;
+        } else {
+          videoRef.current.currentTime += 10;
+        }
+      }
+      lastTapRef.current = 0; // reset
+    } else {
+      lastTapRef.current = now;
+    }
+  };
 
   const source = video ? getVideoSource(video) : null;
 
@@ -195,6 +227,19 @@ export default function PlayerPage() {
   useEffect(() => {
     return () => {
       if (noteSaveTimeout.current) clearTimeout(noteSaveTimeout.current);
+      if (videoRef.current) {
+        try {
+          videoRef.current.pause();
+          const src = videoRef.current.src;
+          videoRef.current.src = "";
+          videoRef.current.load();
+          if (src && src.startsWith("blob:")) {
+            URL.revokeObjectURL(src);
+          }
+        } catch (e) {
+          console.error("Cleanup error:", e);
+        }
+      }
     };
   }, []);
 
@@ -218,8 +263,24 @@ export default function PlayerPage() {
         </Link>
       </div>
 
-      <div className="container max-w-6xl py-6">
-        <div className="rounded-2xl overflow-hidden bg-black border border-border aspect-video relative" data-watermark={user?.email}>
+      <div className="container max-w-6xl py-6" {...swipeHandlers}>
+        <div className="rounded-2xl overflow-hidden bg-black border border-border aspect-video relative group" data-watermark={user?.email}>
+          {/* Double Tap Areas */}
+          {source.type === "telegram" && !errored && (
+            <>
+              <div 
+                className="absolute inset-y-0 left-0 w-1/3 z-10" 
+                onClick={handleTap('left')} 
+                onTouchStart={handleTap('left')}
+              />
+              <div 
+                className="absolute inset-y-0 right-0 w-1/3 z-10" 
+                onClick={handleTap('right')}
+                onTouchStart={handleTap('right')}
+              />
+            </>
+          )}
+
           {source.type === "youtube" || source.type === "drive" ? (
             <iframe
               className="w-full h-full"

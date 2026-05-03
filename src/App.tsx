@@ -46,7 +46,6 @@ const ProfilePage = lazy(() => import("./pages/student/ProfilePage"));
 const NotesPage = lazy(() => import("./pages/student/NotesPage"));
 const ResourcesPage = lazy(() => import("./pages/student/ResourcesPage"));
 const EnrollmentPage = lazy(() => import("./pages/student/EnrollmentPage"));
-const PhoneLoginPage = lazy(() => import("./pages/auth/PhoneLoginPage"));
 
 const AdminDashboardPage = lazy(() => import("./pages/admin/AdminDashboardPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
@@ -92,7 +91,6 @@ const App = () => (
 
                   {/* Auth */}
                   <Route path="/login" element={<LoginPage />} />
-                  <Route path="/phone-login" element={<PhoneLoginPage />} />
                   <Route path="/signup" element={<SignupPage />} />
                   <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                   <Route path="/reset-password" element={<ResetPasswordPage />} />

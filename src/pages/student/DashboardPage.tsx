@@ -65,7 +65,7 @@ export default function DashboardPage() {
     (async () => {
       // Stats
       const [hist, cw, ann, live] = await Promise.all([
-        sb.from("watch_history").select("watched_at, progress_seconds, completed").eq("user_id", user.id).limit(1000),
+        sb.from("watch_history").select("watched_at, progress_seconds, completed").eq("user_id", user.id),
         sb.from("watch_history")
           .select("video_id, progress_seconds, updated_at, videos(id, title, thumbnail_url, duration, chapters(name))")
           .eq("user_id", user.id).eq("completed", false).gt("progress_seconds", 0)
@@ -109,7 +109,12 @@ export default function DashboardPage() {
     }));
   }, [catalog]);
 
-  const now = Date.now();
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="space-y-10">

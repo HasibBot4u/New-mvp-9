@@ -58,11 +58,6 @@ export default function LoginPage() {
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in"}
         </Button>
       </form>
-      <div className="mt-4 text-center">
-        <Link to="/phone-login" className="text-sm font-medium text-foreground-muted hover:text-primary transition-colors">
-          Or login with phone number
-        </Link>
-      </div>
     </AuthShell>
   );
 }

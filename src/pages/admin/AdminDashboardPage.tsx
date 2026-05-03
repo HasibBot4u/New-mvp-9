@@ -80,10 +80,25 @@ export default function AdminDashboardPage() {
   const { refresh: refreshCatalog } = useCatalog();
   const [health, setHealth] = useState<boolean | null>(null);
 
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, refetch: refetchData, isRefetching } = useQuery({
     queryKey: ['adminDashboard'],
     queryFn: fetchDashboardData,
   });
+
+  const { data: channelHealth, isLoading: channelHealthLoading, refetch: refetchChannelHealth } = useQuery({
+    queryKey: ["admin_channel_health"],
+    queryFn: async () => {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      if (!token) return null;
+      const url = (import.meta.env.VITE_API_BASE_URL as string).replace(/\/+$/, "");
+      const res = await fetch(`${url}/api/channels/health`, { headers: { "Authorization": `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Failed to fetch channel health");
+      return res.json();
+    }
+  });
+
+  const refetch = () => { refetchData(); refetchChannelHealth(); };
 
   const checkBackend = async () => {
     try {
@@ -216,6 +231,34 @@ export default function AdminDashboardPage() {
             {activity.length === 0 && <li className="text-foreground-muted text-sm py-6 text-center">কোনো কার্যকলাপ নেই</li>}
           </ul>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/5 bg-surface p-5">
+        <h2 className="font-display font-semibold mb-4 flex items-center justify-between">
+          <span>Channel Health Status</span>
+        </h2>
+        {channelHealth ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(channelHealth.channels || {}).map(([name, data]: [string, any]) => (
+              <div key={name} className={`flex items-center justify-between p-3 rounded-lg border ${data.status === 'ok' ? 'bg-success/5 border-success/20' : 'bg-destructive/5 border-destructive/20'}`}>
+                <div>
+                  <p className="font-medium capitalize">{name.replace('-', ' ')}</p>
+                  <p className="text-xs text-foreground-muted truncate w-40">{data.status === 'ok' ? data.title : data.error}</p>
+                </div>
+                {data.status === 'ok' ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary rounded-full">{data.usage} plays</span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-white/10 rounded-full">{data.members} mem</span>
+                  </div>
+                ) : (
+                  <span className="text-[10px] text-destructive uppercase px-1">Err</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-foreground-muted py-2">{channelHealthLoading ? "Loading..." : "Not available"}</p>
+        )}
       </div>
 
       <div className="rounded-2xl border border-white/5 bg-surface p-5">

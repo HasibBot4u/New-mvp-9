@@ -99,7 +99,7 @@ export default function AdminEnrollmentPage() {
       </header>
 
       {/* Create form */}
-      <div className="rounded-2xl border border-white/5 bg-surface p-5">
+      <div className="rounded-2xl border border-white/5 bg-surface p-5 sticky top-16 z-20 shadow-xl shadow-background">
         <h2 className="font-display font-semibold text-sm uppercase tracking-wider text-foreground-muted mb-4">নতুন কোড তৈরি</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select value={chapterId} onChange={e => setChapterId(e.target.value)}

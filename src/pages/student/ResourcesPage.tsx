@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, FileText, Download, ExternalLink } from "lucide-react";
+import { Loader2, FileText, Download, ExternalLink, Eye } from "lucide-react";
 import { motion } from "framer-motion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PDFViewer } from "@/components/PDFViewer";
 
 interface ResourceRow {
   id: string;
@@ -16,6 +18,7 @@ interface ResourceRow {
 export default function ResourcesPage() {
   const [resources, setResources] = useState<ResourceRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewingPdf, setViewingPdf] = useState<ResourceRow | null>(null);
 
   useEffect(() => {
     const fetchResources = async () => {
@@ -63,6 +66,7 @@ export default function ResourcesPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {resources.map((resource, i) => {
+            const isNativePdfUrl = !!resource.pdf_url;
             const previewUrl = resource.drive_file_id 
               ? `https://drive.google.com/file/d/${resource.drive_file_id}/preview`
               : resource.pdf_url;
@@ -91,16 +95,26 @@ export default function ResourcesPage() {
                 </div>
                 
                 <div className="flex items-center gap-2 mt-auto pt-2 grid grid-cols-2">
-                  {previewUrl && (
-                    <a
-                      href={previewUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                  {isNativePdfUrl ? (
+                    <button
+                      onClick={() => setViewingPdf(resource)}
                       className="flex items-center justify-center gap-2 py-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-foreground-muted hover:text-white transition-colors"
                     >
-                      <ExternalLink className="w-4 h-4" />
+                      <Eye className="w-4 h-4" />
                       <span className="bangla tracking-wide">দেখুন</span>
-                    </a>
+                    </button>
+                  ) : (
+                    previewUrl && (
+                      <a
+                        href={previewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 py-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-foreground-muted hover:text-white transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span className="bangla tracking-wide">দেখুন</span>
+                      </a>
+                    )
                   )}
                   {downloadUrl && (
                     <a
@@ -119,6 +133,17 @@ export default function ResourcesPage() {
           })}
         </div>
       )}
+
+      <Dialog open={!!viewingPdf} onOpenChange={(open) => !open && setViewingPdf(null)}>
+        <DialogContent className="max-w-4xl h-[90vh] p-0 overflow-hidden flex flex-col bg-background border-border">
+          <DialogHeader className="px-4 py-3 border-b flex-shrink-0">
+            <DialogTitle>{viewingPdf?.title_bn || viewingPdf?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden relative min-h-0 bg-muted/20">
+            {viewingPdf?.pdf_url && <PDFViewer url={viewingPdf.pdf_url} />}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,113 +1,115 @@
-import { useEffect, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
-import type { Announcement } from "@/types";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Megaphone, Send, Calendar, Users, Eye, Edit, Trash } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
-const sb = supabase;
-
-function AnnouncementModal({ isOpen, onClose, onSave }: any) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [pinned, setPinned] = useState(false);
-
-  const handleSubmit = (e: any) => {
-    e.preventDefault();
-    if (!title) return;
-    onSave({ title, body, is_pinned: pinned, is_active: true });
-    onClose();
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>New Announcement</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div><Label htmlFor="a-title">Title</Label><Input id="a-title" value={title} onChange={e => setTitle(e.target.value)} required /></div>
-          <div><Label htmlFor="a-content">Content</Label><textarea id="a-content" className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={body} onChange={e => setBody(e.target.value)} /></div>
-          <div className="flex items-center space-x-2">
-            <input type="checkbox" id="pin" checked={pinned} onChange={e => setPinned(e.target.checked)} />
-            <Label htmlFor="pin">Pin this announcement</Label>
-          </div>
-          <DialogFooter><Button type="submit">Post</Button></DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+const MOCK_ANNOUNCEMENTS = [
+  { id: 1, title: 'Physics Exam Postponed', target: 'Physics Cycle 1', status: 'Sent', readers: 450, date: '1h ago' },
+  { id: 2, title: 'New Server Live', target: 'All Users', status: 'Sent', readers: 1200, date: 'Yesterday' },
+  { id: 3, title: 'Payment Gateway Maintenance', target: 'All Users', status: 'Scheduled', readers: 0, date: 'Tomorrow at 10PM' },
+];
 
 export default function AdminAnnouncementsPage() {
-  const [list, setList] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const load = async () => {
-    setLoading(true);
-    const { data } = await sb.from("announcements").select("*").order("created_at", { ascending: false });
-    setList((data ?? []) as unknown as Announcement[]);
-    setLoading(false);
-  };
-  useEffect(() => { load(); }, []);
-
-  const handleSave = async (payload: any) => {
-    const { error } = await sb.from("announcements").insert(payload);
-    if (error) toast({ title: "Failed", description: error.message, variant: "destructive" });
-    else { toast({ title: "Posted" }); load(); }
-  };
-  const toggle = async (a: Announcement) => { await sb.from("announcements").update({ is_active: !a.is_active }).eq("id", a.id); load(); };
-  
-  const handleConfirmDelete = async () => {
-    if (!deleteId) return;
-    await sb.from("announcements").delete().eq("id", deleteId);
-    setDeleteId(null);
-    load();
-  };
-
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between flex-wrap gap-4">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold">Announcements</h1>
-          <p className="text-foreground-dim text-sm mt-1">Broadcast messages to all users.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Announcements</h1>
+          <p className="text-foreground-muted text-sm mt-1">Send push notifications to students or specific batches.</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 px-4 h-10 rounded-full bg-primary text-primary-foreground hover:bg-primary-glow text-sm font-medium">
-          <Plus className="w-4 h-4" /> New
-        </button>
-      </header>
-      <div className="grid gap-3">
-        {list.map(a => (
-          <div key={a.id} className="rounded-2xl border border-white/5 bg-surface p-5 flex items-start gap-4">
-            <span className={`mt-1 w-2 h-2 rounded-full ${a.is_pinned ? "bg-warning" : "bg-primary"}`} />
-            <div className="flex-1 min-w-0">
-              <p className="font-display font-semibold">{a.title}</p>
-              {a.body && <p className="text-sm text-foreground-dim mt-1">{a.body}</p>}
-              <p className="text-xs text-foreground-muted mt-2">{new Date(a.created_at).toLocaleString()}{a.is_pinned ? " · Pinned" : ""}</p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button onClick={() => toggle(a)} className={`px-3 py-1.5 rounded-full text-xs ${a.is_active ? "bg-success/15 text-success" : "bg-white/5 text-foreground-dim"}`}>
-                {a.is_active ? "Active" : "Hidden"}
-              </button>
-              <button aria-label="Delete announcement / ঘোষণা মুছুন" onClick={() => setDeleteId(a.id)} className="px-3 py-1.5 rounded-full text-xs bg-white/5 text-destructive hover:bg-destructive/15"><Trash2 className="w-3 h-3 inline" /></button>
-            </div>
-          </div>
-        ))}
-        {list.length === 0 && <p className="text-center text-foreground-muted py-10">No announcements</p>}
       </div>
-      {showModal && <AnnouncementModal isOpen={showModal} onClose={() => setShowModal(false)} onSave={handleSave} />}
-      <ConfirmModal
-        isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={handleConfirmDelete}
-        title="Delete announcement?"
-      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="bg-surface/40 border-white/5 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Megaphone className="w-4 h-4 text-primary" /> Create Announcement
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs text-foreground-muted">Title</label>
+              <Input placeholder="E.g., Server Maintenance Tonight" className="h-9 bg-black/20" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs text-foreground-muted">Message body (Markdown supported)</label>
+              <textarea 
+                className="w-full h-32 px-3 py-2 text-sm rounded-md border border-white/10 bg-black/20 text-foreground"
+                placeholder="Type your message here..."
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs text-foreground-muted">Target Audience</label>
+              <select className="flex h-9 w-full rounded-md border border-white/10 bg-black/20 px-3 py-1 text-sm shadow-sm transition-colors cursor-pointer text-foreground">
+                <option>All Users</option>
+                <option>Active Enrolled Students Only</option>
+                <option>Specific Subject (Physics)</option>
+              </select>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button className="flex-1">
+                <Send className="w-4 h-4 mr-2" /> Send Now
+              </Button>
+              <Button variant="outline" className="flex-1">
+                <Calendar className="w-4 h-4 mr-2" /> Schedule
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-surface/40 border-white/5 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="text-base">Recent & Scheduled</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-white/5 hover:bg-transparent">
+                    <TableHead>Title</TableHead>
+                    <TableHead>Target</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {MOCK_ANNOUNCEMENTS.map(a => (
+                    <TableRow key={a.id} className="border-white/5 hover:bg-white/[0.02]">
+                      <TableCell>
+                        <p className="text-sm font-medium">{a.title}</p>
+                        <p className="text-xs text-foreground-muted">{a.date}</p>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                         <div className="flex items-center gap-1"><Users className="w-3 h-3 text-foreground-muted" />{a.target}</div>
+                      </TableCell>
+                      <TableCell>
+                        {a.status === 'Sent' ? (
+                          <div className="flex flex-col gap-1">
+                            <Badge variant="outline" className="w-fit text-[10px] border-emerald-500/50 text-emerald-400 bg-emerald-500/10">Sent</Badge>
+                            <span className="text-[10px] text-foreground-muted flex items-center gap-1"><Eye className="w-3 h-3" /> {a.readers} views</span>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="w-fit text-[10px] border-blue-500/50 text-blue-400 bg-blue-500/10">Scheduled</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {a.status === 'Scheduled' && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
+                          )}
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10"><Trash className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

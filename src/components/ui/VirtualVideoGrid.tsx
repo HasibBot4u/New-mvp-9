@@ -1,4 +1,4 @@
-import { Grid as FixedSizeGrid } from 'react-window';
+import { FixedSizeGrid } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { EntityCard } from '@/components/ui/EntityCard';
 

@@ -1,43 +1,131 @@
-const CACHE_NAME = 'nexusedu-v3';
-// Only cache files that ACTUALLY EXIST in public/
-const STATIC_ASSETS = ['/', '/index.html', '/manifest.json', '/nexusedu-icon.svg'];
+const CACHE_NAME = 'nexusedu-cache-v1';
+const DYNAMIC_CACHE = 'nexusedu-dynamic-v1';
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/favicon.ico',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(STATIC_ASSETS);
+    })
   );
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME && key !== DYNAMIC_CACHE)
+          .map((key) => caches.delete(key))
+      );
+    })
   );
   self.clients.claim();
 });
 
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-  // Network-first for API calls
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(
-      fetch(e.request).catch(() => new Response('{"error":"offline"}', { status: 503, headers: { 'Content-Type': 'application/json' } }))
+self.addEventListener('fetch', (event) => {
+  // Navigation requests for SPA
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      caches.match('/index.html').then((response) => {
+        return response || fetch(event.request);
+      })
     );
     return;
   }
-  // Network-first for HTML (prevents stale index.html after deploy — Bug N-055)
-  if (url.pathname === '/' || url.pathname.endsWith('.html')) {
-    e.respondWith(
-      fetch(e.request)
-        .then(res => { caches.open(CACHE_NAME).then(c => c.put(e.request, res.clone())); return res; })
-        .catch(() => caches.match(e.request))
+
+  // API requests
+  if (event.request.url.includes('/api/v1/catalog')) {
+    // Stale-while-revalidate for catalog
+    event.respondWith(
+      caches.open(DYNAMIC_CACHE).then((cache) => {
+        return cache.match(event.request).then((response) => {
+          const fetchPromise = fetch(event.request).then((networkResponse) => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+          return response || fetchPromise;
+        });
+      })
     );
     return;
   }
-  // Cache-first for hashed assets (JS/CSS have content hashes so safe to cache forever)
-  e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+
+  // Images and other assets (Cache First)
+  if (event.request.destination === 'image' || event.request.destination === 'font') {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(event.request).then((networkResponse) => {
+          return caches.open(DYNAMIC_CACHE).then((cache) => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        });
+      })
+    );
+    return;
+  }
+
+  // Default Network First
+  event.respondWith(
+    fetch(event.request).catch(() => {
+      return caches.match(event.request);
+    })
+  );
+});
+
+// Handle Background Sync
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-progress') {
+    event.waitUntil(syncVideoProgress());
+  }
+});
+
+async function syncVideoProgress() {
+  // Mock background sync logic for offline progress updates
+  console.log('[SW] Syncing video progress to server...');
+  return Promise.resolve();
+}
+
+// Push Notifications
+self.addEventListener('push', (event) => {
+  if (event.data) {
+    let data = {};
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = { title: 'New Notification', body: event.data.text() };
+    }
+    
+    const options = {
+      body: data.body,
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      vibrate: [100, 50, 100],
+      data: {
+        dateOfArrival: Date.now(),
+        primaryKey: '2'
+      }
+    };
+    event.waitUntil(
+      self.registration.showNotification(data.title, options)
+    );
+  }
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.openWindow('/')
   );
 });

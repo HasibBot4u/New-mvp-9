@@ -13,15 +13,24 @@ from contextlib import asynccontextmanager
 from typing import Optional, Tuple
 from collections import OrderedDict
 from functools import wraps
+from pydantic import BaseModel, constr, Field
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, Response, RedirectResponse
 from pyrogram import Client
 from pyrogram.errors import FloodWait
+
+from backend.core.security import secrets_manager, verify_admin_signature, generate_secure_hex
+from backend.core.rate_limiter import check_rate_limit, rate_limiter
+from backend.middleware.audit_middleware import AuditMiddleware
+from backend.services.telegram_upload_service import init_telegram_upload_service
+from backend.services.notification_service import init_notification_service
+from backend.workers.upload_worker import UploadWorker
+from backend.api.admin.upload import router as upload_router
 
 def with_retry(max_retries=3, base_delay=1):
     def decorator(func):
@@ -39,20 +48,18 @@ def with_retry(max_retries=3, base_delay=1):
     return decorator
 
 # ─── CONFIG ───────────────────────────────────────────────────
-def _require_env(key: str) -> str:
-    val = os.environ.get(key, "").strip()
-    if not val:
-        logger.info(f"[NexusEdu] FATAL: {key} environment variable is not set. Backend cannot start.")
-        sys.exit(1)
-    return val
 
-API_ID_STR  = _require_env("TELEGRAM_API_ID")
-API_HASH    = _require_env("TELEGRAM_API_HASH")
-SESSION_STRING = _require_env("PYROGRAM_SESSION_STRING")
-SESSION_STRING_2 = os.environ.get("PYROGRAM_SESSION_STRING_2", "").strip()
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+# Config now loaded through SecretsManager
+API_ID_STR  = str(secrets_manager.get_secret("telegram_api_id"))
+API_HASH    = secrets_manager.get_secret("telegram_api_hash")
+SESSION_STRING = secrets_manager.get_secret("telegram_session")
+SESSION_STRING_2 = secrets_manager.get_secret("telegram_session_2")
+SUPABASE_URL = secrets_manager.get_secret("supabase_url")
+SUPABASE_KEY = secrets_manager.get_secret("supabase_service_key")
+SUPABASE_ANON_KEY = secrets_manager.get_secret("supabase_anon_key")
+
+if not API_ID_STR or API_ID_STR == "0" or not API_HASH or not SESSION_STRING:
+    logger.info("[NexusEdu] Environment variables missing. (Running in resilient mode)")
 
 CHANNEL_MAP = {
     # Physics C1-C6
@@ -596,6 +603,15 @@ async def lifespan(app: FastAPI):
             logger.info(f"[NexusEdu] Secondary client failed to start: {e}")
             tg2 = None
 
+    upload_worker_task = None
+    if tg is not None:
+        init_notification_service(tg)
+        upload_service = init_telegram_upload_service(tg)
+        upload_service.set_channels(list(CHANNEL_MAP.values()))
+        
+        worker = UploadWorker(tg)
+        upload_worker_task = asyncio.create_task(worker.start())
+
     await refresh_catalog()
     asyncio.create_task(telegram_watchdog())
 
@@ -610,6 +626,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(catalog_refresher())
 
     yield  # FastAPI serves requests here
+    
+    if upload_worker_task:
+        worker.stop()
+        await upload_worker_task
 
     if tg is not None:
         try:
@@ -626,6 +646,8 @@ async def lifespan(app: FastAPI):
 
 # ─── APP ──────────────────────────────────────────────────────
 app = FastAPI(title="NexusEdu Backend", lifespan=lifespan)
+
+app.include_router(upload_router, prefix="/api/admin", tags=["admin/upload"])
 
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -679,16 +701,17 @@ class ConditionalGZipMiddleware:
         await self.gzip(scope, receive, send)
 
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(AuditMiddleware) # Added Audit Log Middleware
 app.add_middleware(BodySizeLimitMiddleware, max_upload_size=50 * 1024 * 1024)
 app.add_middleware(ConditionalGZipMiddleware, minimum_size=1000)
 
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "https://nexusedu.netlify.app,http://localhost:5173").split(",")
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "https://nexusedu.netlify.app").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
-    allow_headers=["Authorization", "Content-Type", "Range", "Accept-Ranges", "X-Admin-Token"],
+    allow_methods=["GET", "POST", "OPTIONS", "HEAD", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "Range", "Accept-Ranges", "X-Admin-Token", "X-Admin-Signature", "X-Admin-Timestamp"],
     expose_headers=[
         "Content-Range", "Accept-Ranges", "Content-Length", "Content-Type"
     ],
@@ -730,10 +753,9 @@ import io
 
 @app.get("/api/thumbnail/{video_id}")
 async def get_thumbnail(video_id: str, request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    if getattr(check_rate_limit, "__call__", None) and not check_rate_limit(client_ip + "_thumbnail", limit=100, window_seconds=60):
-        # We handle this manually here because we want to return a placeholder image on failure/rate limit,
-        # but 429 is fine. Let's return the placeholder.
+    try:
+        await check_rate_limit(request, limit=100, window=60, prefix="thumbnail")
+    except HTTPException:
         return RedirectResponse("/placeholder-video.jpg")
     
     if video_id not in video_map:
@@ -777,8 +799,9 @@ async def get_thumbnail(video_id: str, request: Request):
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health(request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(client_ip + "_health", limit=20, window_seconds=60):
+    try:
+        await check_rate_limit(request, limit=20, window=60, prefix="health")
+    except HTTPException:
         return JSONResponse({"status": "rate_limited"}, status_code=429)
 
     is_conn = False
@@ -824,42 +847,15 @@ async def health(request: Request):
     })
 
 
-# Simple rate limiter for endpoints
-import time
-rate_limits = LRUDict(max_size=5000, ttl_seconds=3600)
-global_rate_limits = LRUDict(max_size=5000, ttl_seconds=3600)
-
-def check_rate_limit(client_ip: str, limit: int = 5, window_seconds: int = 60) -> bool:
-    now = time.time()
-    
-    # Extract base IP if it has an endpoint suffix
-    base_ip = client_ip.split('_')[0]
-    
-    # 1. Global IP Limit (100 req / hour)
-    global_times = global_rate_limits.get(base_ip, [])
-    global_times = [t for t in global_times if now - t < 3600]
-    if len(global_times) >= 100:
-        global_rate_limits[base_ip] = global_times
-        return False
-    global_times.append(now)
-    global_rate_limits[base_ip] = global_times
-
-    # 2. Endpoint Specific Limit
-    times = rate_limits.get(client_ip, [])
-    # Clean up old timestamps
-    times = [t for t in times if now - t < window_seconds]
-    if len(times) >= limit:
-        rate_limits[client_ip] = times
-        return False
-    times.append(now)
-    rate_limits[client_ip] = times
-    return True
-
-
 channel_usage_stats = {}
 
 @app.api_route("/api/channels/health", methods=["GET"])
 async def channel_health(request: Request, authorization: str = Header(None)):
+    try:
+        await check_rate_limit(request, limit=20, window=60, prefix="channel_health")
+    except HTTPException:
+        return {"status": "rate_limited"}
+
     auth_val = authorization
     user = await verify_supabase_token(auth_val)
     if not user:
@@ -881,10 +877,12 @@ async def channel_health(request: Request, authorization: str = Header(None)):
             results[name] = {"status": "error", "error": str(e)}
             
     return {"status": "ok", "channels": results}
+
+@app.get("/api/catalog")
 async def catalog(request: Request, authorization: str = Header(None)):
-    client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(client_ip + "_catalog", limit=30, window_seconds=60):
-        # We don't raise HTTPException so frontend can fallback easily, but returning 429 is correct
+    try:
+        await check_rate_limit(request, limit=30, window=60, prefix="catalog")
+    except HTTPException:
         raise HTTPException(status_code=429, detail="Too many requests")
 
     auth_val = authorization
@@ -910,9 +908,7 @@ _last_refresh_time = 0.0
 
 @app.get("/api/refresh")
 async def force_refresh(request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(client_ip + "_refresh", limit=5, window_seconds=60):
-        raise HTTPException(status_code=429, detail="Too many refresh requests")
+    await check_rate_limit(request, limit=5, window=60, prefix="refresh")
 
     global _last_refresh_time
     now = time.time()
@@ -925,8 +921,9 @@ async def force_refresh(request: Request):
 
 @app.api_route("/api/warmup", methods=["GET", "POST"])
 async def warmup(request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(client_ip + "_warmup", limit=10, window_seconds=60):
+    try:
+        await check_rate_limit(request, limit=10, window=60, prefix="warmup")
+    except HTTPException:
         return {"status": "rate_limited"}
 
     """
@@ -940,8 +937,9 @@ async def warmup(request: Request):
 
 @app.get("/api/prefetch/{video_id}")
 async def prefetch_video(video_id: str, request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(client_ip + "_prefetch", limit=50, window_seconds=60):
+    try:
+        await check_rate_limit(request, limit=50, window=60, prefix="prefetch")
+    except HTTPException:
         return {"status": "rate_limited"}
 
     """
@@ -1060,9 +1058,7 @@ async def stream_video(
     if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', video_id):
         raise HTTPException(status_code=400, detail="Invalid video ID format")
         
-    client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(client_ip + "_stream", limit=120, window_seconds=60):
-        raise HTTPException(status_code=429, detail="Too many stream requests. Try again later.")
+    await check_rate_limit(request, limit=120, window=60, prefix="stream")
 
     try:
         if video_id not in video_map:
@@ -1179,8 +1175,111 @@ async def stream_video(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+from backend.services.hls_generator import hls_generator
+from fastapi.responses import PlainTextResponse
+
+@app.get("/api/stream/{video_id}/master.m3u8")
+async def stream_video_master_m3u8(
+    video_id: str,
+    request: Request,
+    token: str = None,
+    authorization: str = Header(None)
+):
+    auth_val = authorization or (f"Bearer {token}" if token else None)
+    user = await verify_supabase_token(auth_val)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', video_id):
+        raise HTTPException(status_code=400, detail="Invalid video ID format")
+
+    try:
+        # If it's a telegram video, generate the master playlist
+        playlist = hls_generator.generate_master_playlist(video_id)
+        return PlainTextResponse(playlist, media_type="application/vnd.apple.mpegurl")
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+@app.get("/api/stream/{video_id}/{quality}/playlist.m3u8")
+async def stream_video_variant_m3u8(
+    video_id: str,
+    quality: str,
+    request: Request,
+    token: str = None,
+    authorization: str = Header(None)
+):
+    auth_val = authorization or (f"Bearer {token}" if token else None)
+    user = await verify_supabase_token(auth_val)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+        
+    if video_id not in video_map:
+        await refresh_catalog()
+    if video_id not in video_map:
+        raise HTTPException(404, "Video not found")
+        
+    # Example approx fixed duration logic (this should realistically be fetched from metadata)
+    duration = float(video_map[video_id].get("duration") or 3600.0) # Default to 1 hr if not resolved
+    
+    playlist = hls_generator.generate_variant_playlist(video_id, quality, duration)
+    return PlainTextResponse(playlist, media_type="application/vnd.apple.mpegurl")
+
+@app.get("/api/stream/{video_id}/{quality}/{segment}.ts")
+async def stream_video_segment(
+    video_id: str,
+    quality: str,
+    segment: int,
+    request: Request,
+    token: str = None,
+    authorization: str = Header(None)
+):
+    # This simulates sending a TS chunk by streaming a specific byte range of the MP4.
+    # In a true Adaptive Bitrate environment, transmuxing via ffmpeg or direct proxying 
+    # of pre-rendered `.ts` files from cloud occurs here.
+    auth_val = authorization or (f"Bearer {token}" if token else None)
+    user = await verify_supabase_token(auth_val)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+        
+    if video_id not in video_map:
+        raise HTTPException(404, "Video not found")
+        
+    # Assume we use the telegram stream fetcher here with mocked offsets
+    # Because .ts generation dynamically in python is sluggish, 
+    # we'll proxy back to the main range logic by redirecting to range, 
+    # or returning an empty bytes response just to satisfy the HLS player loop for now
+    # A true implementation calls: stream_service.stream_byte_range()
+    
+    video = video_map[video_id]
+    channel_id = int(video.get("channel_id", 0))
+    message_id = int(video.get("message_id", 0))
+    
+    # Very crude mocked payload for illustration
+    # A real solution must slice the MP4 using `ffmpeg -ss X -t 6`
+    start = segment * 600 * 1024
+    end = start + (600 * 1024) - 1
+    
+    return StreamingResponse(
+        _stream_telegram(channel_id, message_id, start, end, video.get("file_size_bytes", 100000000)),
+        status_code=200,
+        media_type="video/mp2t"
+    )
+
+
+# Pydantic Models for Admin Endpoints
+class DeleteUserReq(BaseModel):
+    user_id: constr(min_length=36, max_length=36)
+    confirmation_text: constr(min_length=1, max_length=50)
+
+class GenerateChapterCodeReq(BaseModel):
+    chapter_id: constr(min_length=36, max_length=36)
+    notes: Optional[str] = ""
+    label: Optional[str] = ""
+    max_uses: int = 1
+
 @app.post("/api/admin/verify")
 async def verify_admin(request: Request):
+    await check_rate_limit(request, limit=10, window=60, prefix="admin_verify")
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -1190,8 +1289,8 @@ async def verify_admin(request: Request):
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     try:
-        supabase_url = os.environ.get("SUPABASE_URL")
-        anon_key = os.environ.get("SUPABASE_ANON_KEY")
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        anon_key = secrets_manager.get_secret("supabase_anon_key")
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
                 f"{supabase_url}/rest/v1/profiles?select=role&id=eq.{user['sub']}",
@@ -1205,6 +1304,123 @@ async def verify_admin(request: Request):
         logger.error(f"Error checking admin status: {e}")
         
     return {"is_admin": False}
+
+@app.post("/api/admin/delete_user")
+async def delete_user_account(
+    req: DeleteUserReq, 
+    request: Request
+):
+    await check_rate_limit(request, limit=5, window=60, prefix="admin_action")
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        raise HTTPException(401, "Unauthorized")
+        
+    # Check if admin
+    is_admin = False
+    user = await verify_supabase_token(authorization)
+    if user:
+        try:
+            supabase_url = secrets_manager.get_secret("supabase_url")
+            anon_key = secrets_manager.get_secret("supabase_anon_key")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{supabase_url}/rest/v1/profiles?select=role&id=eq.{user['sub']}",
+                    headers={"apikey": anon_key, "Authorization": authorization}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    is_admin = (data and len(data) > 0 and data[0].get("role") == "admin")
+        except Exception:
+            pass
+            
+    if not is_admin:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    x_admin_signature = request.headers.get("X-Admin-Signature")
+    x_admin_timestamp = request.headers.get("X-Admin-Timestamp")
+    
+    if not x_admin_signature or not x_admin_timestamp:
+        raise HTTPException(status_code=403, detail="Missing secure admin signature")
+
+    # Request signature validation
+    if not verify_admin_signature(x_admin_signature, req.model_dump_json(), x_admin_timestamp):
+        raise HTTPException(status_code=403, detail="Invalid admin signature")
+
+    if req.confirmation_text != f"DELETE-{req.user_id}":
+        raise HTTPException(400, "Invalid confirmation text")
+        
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        async with httpx.AsyncClient() as client:
+            resp = await client.request(
+                "DELETE",
+                f"{supabase_url}/auth/v1/admin/users/{req.user_id}",
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+            )
+            if resp.status_code not in (200, 204, 404):
+                raise HTTPException(500, "Failed to delete user via Supabase admin")
+            return {"status": "User deleted"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.post("/api/admin/generate_chapter_code")
+async def admin_generate_chapter_code(
+    req: GenerateChapterCodeReq,
+    request: Request
+):
+    await check_rate_limit(request, limit=20, window=60, prefix="admin_action")
+    authorization = request.headers.get("Authorization")
+    user = await verify_supabase_token(authorization)
+    if not user:
+        raise HTTPException(401, "Unauthorized")
+        
+    is_admin = False
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        anon_key = secrets_manager.get_secret("supabase_anon_key")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{supabase_url}/rest/v1/profiles?select=role&id=eq.{user['sub']}",
+                headers={"apikey": anon_key, "Authorization": authorization}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                is_admin = (data and len(data) > 0 and data[0].get("role") == "admin")
+    except Exception:
+        pass
+        
+    if not is_admin:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    secure_code = f"{generate_secure_hex(3)}-{generate_secure_hex(3)}"
+    
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{supabase_url}/rest/v1/enrollment_codes",
+                headers={
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal"
+                },
+                json={
+                    "chapter_id": req.chapter_id,
+                    "code": secure_code,
+                    "max_uses": req.max_uses,
+                    "notes": req.notes,
+                    "label": req.label,
+                    "generated_by": user['sub'],
+                    "created_by": user['sub']
+                }
+            )
+            resp.raise_for_status()
+            return {"code": secure_code}
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 # ─── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":

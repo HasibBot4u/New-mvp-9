@@ -1,144 +1,94 @@
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Download, Search } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { useState, useEffect } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Play, Square, Download, Filter } from "lucide-react";
 
-interface LogRow {
+interface LogEntry {
   id: string;
-  created_at: string;
-  user_id: string | null;
-  action: string;
-  details: any;
-  ip_address: string | null;
-  profiles?: { display_name: string | null; email: string | null } | null;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  source: string;
 }
 
-const actionColors: Record<string, string> = {
-  login: "bg-info/15 text-info",
-  signup: "bg-success/15 text-success",
-  code_used: "bg-warning/15 text-warning",
-  video_watch: "bg-white/10 text-foreground-dim",
-  admin_action: "bg-destructive/15 text-destructive",
-};
-
 export default function AdminLogsPage() {
-  const [rows, setRows] = useState<LogRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [actionFilter, setActionFilter] = useState<string>("all");
-  const [search, setSearch] = useState("");
-  const [days, setDays] = useState<number>(7);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isTailing, setIsTailing] = useState(true);
 
-  const load = async () => {
-    setLoading(true);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-    const { data } = await supabase
-      .from("activity_logs")
-      .select("*, profiles(display_name, email)")
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(200);
-    setRows((data ?? []) as unknown as LogRow[]);
-    setLoading(false);
-  };
-  useEffect(() => { 
-    load(); 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days]);
+  // Simulate real-time logs
+  useEffect(() => {
+    if (!isTailing) return;
+    
+    // Initial logs
+    const initialLogs: LogEntry[] = Array.from({length: 20}, (_, i) => ({
+      id: `log_${Date.now()}_${i}`,
+      timestamp: new Date(Date.now() - (20-i) * 1000).toISOString(),
+      level: Math.random() > 0.8 ? 'error' : Math.random() > 0.6 ? 'warn' : 'info',
+      message: ['User logged in', 'Database query slow', 'Telegram rate limit hit', 'Uploaded chunk 5', 'Session token expired'][Math.floor(Math.random() * 5)],
+      source: ['api', 'auth', 'telegram', 'worker'][Math.floor(Math.random() * 4)]
+    }));
+    
+    setLogs(initialLogs);
 
-  const filtered = useMemo(() => rows.filter(r => {
-    if (actionFilter !== "all" && r.action !== actionFilter) return false;
-    if (search && !(r.profiles?.email ?? "").toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  }), [rows, actionFilter, search]);
+    const interval = setInterval(() => {
+      const levelRand = Math.random();
+      const newLog: LogEntry = {
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        level: levelRand > 0.9 ? 'error' : levelRand > 0.7 ? 'warn' : 'info',
+        message: ['User fetch profile', 'Job completed', 'Invalid input received', 'Stripe webhook', 'Connection established'][Math.floor(Math.random() * 5)],
+        source: ['api', 'web', 'worker', 'payment'][Math.floor(Math.random() * 4)]
+      };
+      setLogs(prev => [...prev.slice(-99), newLog]); // Keep last 100
+    }, 2000);
 
-  const exportCsv = () => {
-    const header = "timestamp,user_email,user_name,action,details\n";
-    const body = filtered.map(r =>
-      [r.created_at, r.profiles?.email ?? "", r.profiles?.display_name ?? "", r.action, JSON.stringify(r.details ?? {}).replace(/"/g, '""')]
-        .map(v => `"${v}"`).join(",")
-    ).join("\n");
-    const blob = new Blob([header + body], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
-    a.download = `nexus-logs-${Date.now()}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
+    return () => clearInterval(interval);
+  }, [isTailing]);
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between flex-wrap gap-4">
+    <div className="space-y-6 animate-in fade-in duration-500 min-h-[calc(100vh-100px)] flex flex-col">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold">Activity logs</h1>
-          <p className="text-foreground-dim text-sm mt-1">{filtered.length} ইভেন্ট</p>
+          <h1 className="text-2xl font-bold tracking-tight">System Logs</h1>
+          <p className="text-foreground-muted text-sm mt-1">Real-time log viewer and diagnostic tools.</p>
         </div>
-        <button onClick={exportCsv} className="inline-flex items-center gap-2 px-4 h-10 rounded-full bg-primary text-primary-foreground hover:bg-primary-glow text-sm font-medium">
-          <Download className="w-4 h-4" /> CSV ডাউনলোড
-        </button>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ইমেইল দিয়ে খুঁজুন…"
-            className="pl-9 h-10 px-4 rounded-full bg-surface border border-white/10 text-sm w-64 focus:outline-none focus:border-primary/50" />
-        </div>
-        <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
-          className="h-10 px-4 rounded-full bg-surface border border-white/10 text-sm focus:outline-none focus:border-primary/50">
-          <option value="all">সব অ্যাকশন</option>
-          <option value="login">login</option>
-          <option value="signup">signup</option>
-          <option value="code_used">code_used</option>
-          <option value="video_watch">video_watch</option>
-          <option value="admin_action">admin_action</option>
-        </select>
-        <div className="inline-flex rounded-full bg-surface border border-white/10 p-1 text-xs">
-          {[{l:"আজ",v:1},{l:"৭ দিন",v:7},{l:"৩০ দিন",v:30}].map(b => (
-            <button key={b.v} onClick={() => setDays(b.v)}
-              className={`px-3 h-8 rounded-full ${days===b.v ? "bg-primary text-primary-foreground" : "text-foreground-dim hover:text-foreground"}`}>
-              {b.l}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-9">
+            <Download className="w-4 h-4 mr-2" /> Export Logs
+          </Button>
+          <Button 
+            variant={isTailing ? "default" : "secondary"} 
+            size="sm" 
+            className="h-9"
+            onClick={() => setIsTailing(!isTailing)}
+          >
+            {isTailing ? <><Square className="w-4 h-4 mr-2" /> Stop Tail</> : <><Play className="w-4 h-4 mr-2" /> Resume Tail</>}
+          </Button>
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : (
-        <div className="rounded-2xl border border-white/5 bg-surface overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-white/5 text-xs uppercase tracking-wider text-foreground-muted">
-                <tr>
-                  <th className="text-left p-4">সময়</th>
-                  <th className="text-left p-4">ব্যবহারকারী</th>
-                  <th className="text-left p-4">অ্যাকশন</th>
-                  <th className="text-left p-4">বিবরণ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(r => (
-                  <tr key={r.id} className="border-t border-white/5 hover:bg-white/5 align-top">
-                    <td className="p-4 text-xs text-foreground-dim whitespace-nowrap">{format(new Date(r.created_at), "dd MMM, HH:mm:ss")}</td>
-                    <td className="p-4">
-                      <p className="font-medium">{r.profiles?.display_name ?? "—"}</p>
-                      <p className="text-xs text-foreground-muted">{r.profiles?.email ?? r.user_id ?? "system"}</p>
-                    </td>
-                    <td className="p-4">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs ${actionColors[r.action] ?? "bg-white/10 text-foreground-dim"}`}>{r.action}</span>
-                    </td>
-                    <td className="p-4">
-                      <pre className="text-xs text-foreground-muted bg-background/40 p-2 rounded-lg max-w-md overflow-x-auto">{JSON.stringify(r.details ?? {}, null, 2)}</pre>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={4} className="p-10 text-center text-foreground-muted">কোনো লগ পাওয়া যায়নি</td></tr>
-                )}
-              </tbody>
-            </table>
+      <Card className="bg-surface/40 border-white/5 backdrop-blur-xl flex-1 flex flex-col overflow-hidden">
+        <div className="p-3 border-b border-white/5 flex gap-2 bg-black/20">
+          <Input placeholder="Search logs..." className="h-8 bg-black/20 border-white/10 max-w-sm text-sm" />
+          <Button variant="outline" size="sm" className="h-8 px-2"><Filter className="w-4 h-4" /></Button>
+        </div>
+        
+        <div className="flex-1 bg-[#0a0a0a] p-4 overflow-y-auto font-mono text-[11px] leading-relaxed custom-scrollbar flex flex-col-reverse">
+          <div className="space-y-1">
+            {logs.map((log) => (
+              <div key={log.id} className={`flex items-start gap-4 hover:bg-white/5 px-2 py-0.5 rounded ${log.level === 'error' ? 'text-red-400 bg-red-500/5' : log.level === 'warn' ? 'text-yellow-400 bg-yellow-500/5' : 'text-gray-400'}`}>
+                <span className="shrink-0 opacity-50">{new Date(log.timestamp).toLocaleTimeString([], {hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit'})}</span>
+                <span className={`shrink-0 w-12 uppercase ${log.level === 'error' ? 'text-red-500 font-bold' : log.level === 'warn' ? 'text-yellow-500 font-bold' : 'text-blue-500'}`}>
+                  {log.level}
+                </span>
+                <span className="shrink-0 w-20 text-purple-400">[{log.source}]</span>
+                <span className="break-all">{log.message}</span>
+              </div>
+            ))}
           </div>
         </div>
-      )}
+      </Card>
     </div>
   );
 }

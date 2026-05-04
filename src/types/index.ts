@@ -98,3 +98,86 @@ export interface CatalogChapter { id: string; cycle_id?: string; name: string; n
 export interface CatalogCycle { id: string; name: string; name_bn?: string; display_order: number; telegram_channel_id?: string; chapters: CatalogChapter[]; }
 export interface CatalogSubject { id: string; name: string; name_bn?: string; slug: string; thumbnail_color?: string; color?: string; description?: string; display_order: number; cycles: CatalogCycle[]; }
 export interface CatalogData { subjects: CatalogSubject[]; total_videos: number; }
+
+export interface Payment {
+  id: string;
+  user_id: string;
+  amount: number;
+  currency: string;
+  payment_method: string;
+  payment_status: 'pending' | 'completed' | 'failed' | 'refunded';
+  transaction_id?: string;
+  subscription_type?: 'monthly' | 'yearly' | 'lifetime';
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceSession {
+  id: string;
+  user_id: string;
+  device_fingerprint: string;
+  device_type?: 'mobile' | 'tablet' | 'desktop';
+  browser?: string;
+  os?: string;
+  ip_address?: string;
+  last_active_at: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface VideoVariant {
+  id: string;
+  video_id: string;
+  quality: string;
+  telegram_channel_id?: string;
+  telegram_message_id?: number;
+  file_size_mb?: number;
+  width?: number;
+  height?: number;
+  bitrate?: number;
+  codec?: string;
+  checksum_md5?: string;
+  checksum_sha256?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface DownloadQueueItem {
+  id: string;
+  user_id: string;
+  video_id: string;
+  quality: string;
+  status: 'queued' | 'downloading' | 'completed' | 'failed';
+  progress_percent: number;
+  bytes_downloaded: number;
+  total_bytes?: number;
+  error_message?: string;
+  retry_count: number;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface ContentReport {
+  id: string;
+  reporter_id?: string;
+  video_id: string;
+  report_type: 'quality' | 'incorrect' | 'missing' | 'other';
+  description?: string;
+  status: 'open' | 'investigating' | 'resolved' | 'dismissed';
+  admin_notes?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
+export interface VideoAnalytics {
+  id: string;
+  video_id: string;
+  date: string;
+  views: number;
+  unique_viewers: number;
+  avg_watch_duration: number;
+  completion_rate: number;
+  drop_off_points: number[];
+}

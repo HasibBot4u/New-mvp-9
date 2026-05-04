@@ -1,0 +1,42 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "title": "NexusEdu System Overview",
+  "panels": [
+    {
+      "title": "Request Duration",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
+          "legendFormat": "Avg Duration"
+        }
+      ]
+    },
+    {
+      "title": "Active Streams",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "active_streams",
+          "legendFormat": "Streams"
+        }
+      ]
+    },
+    {
+      "title": "Telegram Connection Status",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "telegram_connection_status",
+          "legendFormat": "Status"
+        }
+      ]
+    }
+  ]
+}

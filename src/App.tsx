@@ -15,6 +15,9 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { PublicShell } from "@/components/public/PublicShell";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PageLoader } from "@/components/ui/PageLoader";
+import { SkipLink } from "@/components/a11y/SkipLink";
+import { LiveRegion } from "@/components/a11y/LiveRegion";
+import { RouteAnalytics } from "@/components/seo/RouteAnalytics";
 
 const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -73,6 +76,9 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <RouteAnalytics />
+            <SkipLink />
+            <LiveRegion />
             <AuthProvider>
               <CatalogProvider>
                 <Suspense fallback={<PageLoader />}>

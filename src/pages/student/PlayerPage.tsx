@@ -10,12 +10,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 import { trackEvent } from "@/lib/analytics";
 
+import { ProtectedPlayer } from "@/components/video/ProtectedPlayer";
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
 
 type SourceKind = "youtube" | "drive" | "telegram";
 
-function getVideoSource(video: any): { type: SourceKind; url: string } {
+function getVideoSource(video: any): { type: SourceKind; url: string; poster?: string } {
   if (video.source_type === "youtube" && (video.youtube_video_id || video.youtube_id)) {
     const id = video.youtube_video_id ?? video.youtube_id;
     return { type: "youtube", url: `https://www.youtube.com/embed/${id}?autoplay=1&rel=0&modestbranding=1` };
@@ -23,9 +25,11 @@ function getVideoSource(video: any): { type: SourceKind; url: string } {
   if (video.source_type === "drive" && video.drive_file_id) {
     return { type: "drive", url: `https://drive.google.com/file/d/${video.drive_file_id}/preview` };
   }
-  const url = video.source_url || `${API_BASE}/api/stream/${video.id}`;
-  return { type: "telegram", url };
+  // Generate Master M3U8 for Telegram Source instead of raw stream endpoint
+  const url = `${API_BASE}/api/stream/${video.id}/master.m3u8`;
+  return { type: "telegram", url, poster: `${API_BASE}/api/thumbnail/${video.id}` };
 }
+
 
 export default function PlayerPage() {
   const { videoId } = useParams();
@@ -152,11 +156,6 @@ export default function PlayerPage() {
       .then(({ data }: any) => { if (data?.content) setNotes(data.content); });
   }, [user, video, loadProgressFromSupabase]);
 
-  const handleTimeUpdate = useCallback(() => {
-    if (!videoRef.current || !user || !video) return;
-    updateProgressHook(videoRef.current.currentTime);
-  }, [user, video, updateProgressHook]);
-
   const handleVideoEnded = useCallback(async () => {
     if (!user || !video) return;
     await saveProgressToSupabase(videoRef.current?.duration || 0, videoRef.current?.duration || 0);
@@ -225,14 +224,15 @@ export default function PlayerPage() {
 
   // Cleanup
   useEffect(() => {
+    const videoElement = videoRef.current;
     return () => {
       if (noteSaveTimeout.current) clearTimeout(noteSaveTimeout.current);
-      if (videoRef.current) {
+      if (videoElement) {
         try {
-          videoRef.current.pause();
-          const src = videoRef.current.src;
-          videoRef.current.src = "";
-          videoRef.current.load();
+          videoElement.pause();
+          const src = videoElement.src;
+          videoElement.src = "";
+          videoElement.load();
           if (src && src.startsWith("blob:")) {
             URL.revokeObjectURL(src);
           }
@@ -300,26 +300,21 @@ export default function PlayerPage() {
               </div>
             </div>
           ) : (
-            <video
-              ref={videoRef}
+            <ProtectedPlayer
               src={source.type === "telegram" ? `${source.url}?token=${sessionToken}` : source.url}
-              controls
-              autoPlay
-              preload="auto"
-              className="w-full h-full"
-              onLoadedMetadata={() => {
-                setDuration(videoRef.current?.duration || 0);
+              token={sessionToken || ""}
+              onLoadedMetadata={(dur: number) => {
+                setDuration(dur);
                 trackEvent("video_play", { video_id: video.id, title: video.title });
-                if (fetchedProgress.current > 0 && videoRef.current) {
-                  try { videoRef.current.currentTime = fetchedProgress.current; } catch (e) { console.error("Could not seek to resume position", e); }
-                }
               }}
-              onTimeUpdate={handleTimeUpdate}
+              onTimeUpdate={(time: number) => {
+                updateProgressHook(time);
+              }}
               onEnded={() => {
                 trackEvent("video_complete", { video_id: video.id, title: video.title });
                 handleVideoEnded();
               }}
-              onError={handleVideoError}
+              onError={handleVideoError as () => void}
             />
           )}
         </div>

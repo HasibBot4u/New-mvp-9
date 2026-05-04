@@ -31,7 +31,7 @@ The content has this hierarchy:
 
 | Channel Name | Subject | Cycle | Channel ID |
 |---|---|---|---|
-| NexusEdu PHY C1 | Physics | Cycle 1 | -1003569793885 |
+| NexusEdu PHY C1 | Physics | Cycle 1 | (stored securely) |
 | NexusEdu PHY C2 | Physics | Cycle 2 | (stored in DB) |
 | NexusEdu PHY C3–C6 | Physics | Cycles 3–6 | (stored in DB) |
 | NexusEdu CHE C1–C6 | Chemistry | Cycles 1–6 | (stored in DB) |
@@ -53,7 +53,7 @@ Both are stored per video row in the `videos` database table:
 ```
 videos.telegram_file_id     = "BQACAgUAAxkBAAIBcGX..."
 videos.telegram_message_id  = 3
-videos.telegram_channel_id  = "-1003569793885"
+videos.telegram_channel_id  = "-100xxxxxxx"
 ```
 
 ---

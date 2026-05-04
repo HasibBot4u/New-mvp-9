@@ -1,0 +1,29 @@
+groups:
+- name: NexusEduAlerts
+  rules:
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: High HTTP Error Rate
+      description: Error rate exceeded 5% for the last 2 minutes.
+
+  - alert: SlowResponses
+    expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) > 2
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Slow API Responses
+      description: Average response time is > 2s for the last 2 minutes.
+
+  - alert: TelegramDisconnected
+    expr: telegram_connection_status == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: Telegram Client Disconnected
+      description: The Pyrogram client has been disconnected for over 2 minutes.

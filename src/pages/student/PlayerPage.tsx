@@ -25,8 +25,8 @@ function getVideoSource(video: any): { type: SourceKind; url: string; poster?: s
   if (video.source_type === "drive" && video.drive_file_id) {
     return { type: "drive", url: `https://drive.google.com/file/d/${video.drive_file_id}/preview` };
   }
-  // Generate Master M3U8 for Telegram Source instead of raw stream endpoint
-  const url = `${API_BASE}/api/stream/${video.id}/master.m3u8`;
+  // Use direct MP4 stream endpoint for Telegram Source
+  const url = `${API_BASE}/api/stream/${video.id}`;
   return { type: "telegram", url, poster: `${API_BASE}/api/thumbnail/${video.id}` };
 }
 
@@ -230,12 +230,8 @@ export default function PlayerPage() {
       if (videoElement) {
         try {
           videoElement.pause();
-          const src = videoElement.src;
-          videoElement.src = "";
+          videoElement.removeAttribute('src');
           videoElement.load();
-          if (src && src.startsWith("blob:")) {
-            URL.revokeObjectURL(src);
-          }
         } catch (e) {
           console.error("Cleanup error:", e);
         }

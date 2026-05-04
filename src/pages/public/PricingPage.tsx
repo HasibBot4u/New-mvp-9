@@ -1,7 +1,12 @@
-import { CheckCircle2 } from "lucide-react";
+import React, { useState } from "react";
+import { CheckCircle2, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 const PLANS = [
   {
@@ -52,14 +57,79 @@ const PLANS = [
 ];
 
 export default function PricingPage() {
+  const [enrollmentCode, setEnrollmentCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const handleEnrollment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!enrollmentCode) return;
+    
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Please login to use an enrollment code");
+        setLoading(false);
+        navigate("/login");
+        return;
+      }
+
+      const res = await fetch("/api/v1/payments/enroll", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ code: enrollmentCode })
+      });
+
+      if (res.ok) {
+        toast.success("Enrollment successful!");
+        navigate("/student/dashboard");
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || "Invalid enrollment code");
+      }
+    } catch (error) {
+      toast.error("Failed to process enrollment code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto py-16 px-4 sm:px-6 lg:px-8 animate-in fade-in duration-500 min-h-screen">
       <div className="text-center max-w-3xl mx-auto mb-16">
-        <Badge variant="outline" className="mb-4 bg-primary/10 text-primary border-primary/20">Simple Pricing</Badge>
+        <Badge variant="outline" className="mb-4 bg-primary/10 text-primary border-primary/20">Simple Pricing (Coming Soon)</Badge>
         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4">Choose the perfect plan for your studies</h1>
         <p className="text-lg text-foreground-muted">
-          Whether you're brushing up on a single subject or preparing for admission tests, we have a plan for you.
+          Direct payments are temporarily disabled while we add new payment gateways.
         </p>
+      </div>
+
+      <div className="max-w-md mx-auto mb-16">
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Ticket className="w-5 h-5 text-primary" />
+              Have an Enrollment Code?
+            </CardTitle>
+            <CardDescription>Enter it below to unlock your plan.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleEnrollment} className="flex gap-2">
+              <Input 
+                placeholder="Enter code (e.g. VIP-2026)" 
+                value={enrollmentCode}
+                onChange={(e) => setEnrollmentCode(e.target.value)}
+              />
+              <Button type="submit" disabled={!enrollmentCode || loading}>
+                Redeem
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 max-w-7xl mx-auto">
@@ -99,20 +169,16 @@ export default function PricingPage() {
               <Button 
                 variant={plan.popular ? "default" : "outline"} 
                 className={`w-full ${plan.popular ? '' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
-                onClick={() => window.location.href = `/checkout?plan=${plan.id}`}
+                disabled={plan.price !== "0"}
+                onClick={() => {
+                  if(plan.price === "0") navigate("/signup");
+                }}
               >
-                {plan.price === "0" ? "Start for Free" : `Choose ${plan.name}`}
+                {plan.price === "0" ? "Start for Free" : `Coming Soon`}
               </Button>
             </CardFooter>
           </Card>
         ))}
-      </div>
-      
-      <div className="mt-24 text-center">
-        <h3 className="text-xl font-bold mb-4">100% Money-Back Guarantee</h3>
-        <p className="text-foreground-muted max-w-xl mx-auto">
-          Try any premium plan for 7 days. If you're not completely satisfied with the quality of our content, we'll refund your payment in full. No questions asked.
-        </p>
       </div>
     </div>
   );

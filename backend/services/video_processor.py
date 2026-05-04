@@ -66,6 +66,17 @@ class VideoProcessor:
                 
         return output_paths
 
+    async def upload_thumbnail_to_telegram(self, app, file_path: str, channel_id: int) -> int:
+        """Upload thumbnail to Telegram as a photo and return the message ID."""
+        import logging
+        logger = logging.getLogger("NexusEdu.VideoProcessor")
+        try:
+            msg = await app.send_photo(chat_id=channel_id, photo=file_path)
+            return msg.id
+        except Exception as e:
+            logger.error(f"Failed to upload thumbnail: {e}")
+            return 0
+
     async def generate_variants(self, file_path: str) -> Dict[str, str]:
         """Generate 360p, 720p, 1080p variants."""
         metadata = await self.get_metadata(file_path)

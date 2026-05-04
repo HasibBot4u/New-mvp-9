@@ -1,58 +1,81 @@
+import os
+import time
 import logging
-from pyrogram import Client
+import httpx
+import asyncio
 from typing import Optional
 
 logger = logging.getLogger("NexusEdu.NotificationService")
 
 class NotificationService:
-    def __init__(self, app: Client):
-        self.app = app
-        self.admin_chat_id = None # Set this to an admin group or user ID
-
-    def set_admin_chat_id(self, chat_id: int):
-        self.admin_chat_id = chat_id
-
-    async def notify_upload_complete(self, file_name: str, variants: list, metadata: dict):
-        if not self.admin_chat_id:
-            return
+    def __init__(self):
+        self.bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        self.admin_chat_id = os.environ.get("ADMIN_CHAT_ID")
         
-        text = f"â **Upload Complete**\n\n"
-        text += f"**File:** {file_name}\n"
-        text += f"**Duration:** {metadata.get('duration')}s\n"
-        text += f"**Variants:** {', '.join(variants)}\n"
-        
-        try:
-            await self.app.send_message(self.admin_chat_id, text)
-        except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
-
-    async def notify_error(self, message: str, error_details: str):
         if not self.admin_chat_id:
+            logger.warning("ADMIN_CHAT_ID is not set. Notifications will only be logged, not sent to Telegram.")
+        if not self.bot_token:
+            logger.warning("TELEGRAM_BOT_TOKEN is not set. Telegram notifications are disabled.")
+
+        self.notification_timestamps = []
+        self._lock = asyncio.Lock()
+
+    async def _send_telegram_message(self, text: str):
+        if not self.admin_chat_id or not self.bot_token:
+            logger.info(f"Fallback log (no bot setup): {text}")
             return
+
+        # Rate limiting: max 10 per minute
+        now = time.time()
+        async with self._lock:
+            # Remove timestamps older than 60 seconds
+            self.notification_timestamps = [t for t in self.notification_timestamps if now - t < 60]
             
-        text = f"â **Processing Error**\n\n"
-        text += f"**Message:** {message}\n"
-        text += f"**Details:** `{error_details}`\n"
-        
-        try:
-            await self.app.send_message(self.admin_chat_id, text)
-        except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
-
-    async def check_channel_capacity(self, channel_id: int):
-        if not self.admin_chat_id:
-            return
+            if len(self.notification_timestamps) >= 10:
+                logger.warning("Notification rate limit exceeded (10/min). Dropping message.")
+                logger.info(f"Fallback log (rate limited): {text}")
+                return
             
-        # Placeholder logic: Telegram groups/channels theoretically have no hard file size limit
-        # but maybe we limit to 1000 messages or similar estimated metric. Let's assume we warn at 90%
-        # of our internal threshold.
-        # e.g., if we limit a channel to 500GB total space used:
-        # Just send a stub warning for now.
-        pass
-        
-notification_service = None
+            self.notification_timestamps.append(now)
 
-def init_notification_service(app: Client):
+        try:
+            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+            payload = {
+                "chat_id": self.admin_chat_id,
+                "text": text,
+                "parse_mode": "Markdown"
+            }
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to send Telegram notification: {e}")
+            logger.info(f"Fallback log (error): {text}")
+
+    async def notify_admin(self, message: str):
+        await self._send_telegram_message(message)
+
+    async def notify_upload_complete(self, video_id: str, title: str):
+        text = f"✅ **Upload Complete**\n\n**Video ID:** `{video_id}`\n**Title:** {title}"
+        await self._send_telegram_message(text)
+
+    async def notify_upload_error(self, video_id: str, error: str):
+        text = f"❌ **Upload Error**\n\n**Video ID:** `{video_id}`\n**Error:** `{error}`"
+        await self._send_telegram_message(text)
+
+    async def notify_channel_full(self, channel_id: str):
+        text = f"⚠️ **Channel Capacity Warning**\n\n**Channel ID:** `{channel_id}` is near capacity. Please allocate a new storage channel."
+        await self._send_telegram_message(text)
+
+notification_service = NotificationService()
+
+def init_notification_service(app=None):
     global notification_service
-    notification_service = NotificationService(app)
     return notification_service
+
+# --- Usage Examples ---
+# from backend.services.notification_service import notification_service
+# await notification_service.notify_admin("System is starting up...")
+# await notification_service.notify_upload_complete("vid_123", "Math Chapter 1")
+# await notification_service.notify_upload_error("vid_123", "File too large")
+# await notification_service.notify_channel_full("-100123456789")

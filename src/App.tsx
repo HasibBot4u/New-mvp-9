@@ -34,6 +34,7 @@ const PrivacyPage = lazy(() => import("./pages/public/PrivacyPage"));
 const TermsPage = lazy(() => import("./pages/public/TermsPage"));
 const RefundPolicyPage = lazy(() => import("./pages/public/RefundPolicyPage"));
 const SuccessStoriesPage = lazy(() => import("./pages/public/SuccessStoriesPage"));
+const PricingPage = lazy(() => import("./pages/public/PricingPage"));
 
 const DashboardPage = lazy(() => import("./pages/student/DashboardPage"));
 const SubjectPage = lazy(() => import("./pages/student/SubjectPage"));
@@ -88,6 +89,7 @@ const App = () => (
                   <Route element={<PublicShell />}>
                     <Route path="/" element={<Index />} />
                     <Route path="/about" element={<AboutPage />} />
+                    <Route path="/pricing" element={<PricingPage />} />
                     <Route path="/contact" element={<ContactPage />} />
                     <Route path="/privacy" element={<PrivacyPage />} />
                     <Route path="/terms" element={<TermsPage />} />

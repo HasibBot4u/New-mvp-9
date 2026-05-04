@@ -30,6 +30,7 @@ from backend.middleware.audit_middleware import AuditMiddleware
 from backend.services.telegram_upload_service import init_telegram_upload_service
 from backend.services.notification_service import init_notification_service
 from backend.workers.upload_worker import UploadWorker
+from backend.bot_manager import bot_manager
 from backend.api.admin.upload import router as upload_router
 
 def with_retry(max_retries=3, base_delay=1):
@@ -160,10 +161,8 @@ async def verify_supabase_token(authorization: str) -> dict | None:
         return None
     token = authorization[7:]
     
-    try:
-        return _TOKEN_CACHE.get(token)
-    except KeyError:
-        pass
+    if token in _TOKEN_CACHE:
+        return _TOKEN_CACHE[token]
 
     try:
         supabase_url = os.environ.get("SUPABASE_URL")
@@ -363,7 +362,7 @@ async def fetch_video_secrets(client: httpx.AsyncClient) -> dict:
     while True:
         url = (
             f"{SUPABASE_URL}/rest/v1/videos?is_active=eq.true"
-            f"&select=id,telegram_channel_id,telegram_message_id"
+            f"&select=id,telegram_channel_id,telegram_message_id,thumbnail_telegram_message_id"
             f"&offset={offset}&limit=1000"
         )
         for attempt in range(3):
@@ -382,7 +381,8 @@ async def fetch_video_secrets(client: httpx.AsyncClient) -> dict:
         for v in batch:
             secrets[v["id"]] = {
                 "channel_id": v.get("telegram_channel_id", ""),
-                "message_id": v.get("telegram_message_id", 0)
+                "message_id": v.get("telegram_message_id", 0),
+                "thumbnail_message_id": v.get("thumbnail_telegram_message_id", 0)
             }
         if len(batch) < 1000:
             break
@@ -418,8 +418,8 @@ async def refresh_catalog():
                 "drive_file_id": v.get("drive_file_id", ""),
                 "channel_id": sec.get("channel_id", ""),
                 "message_id": sec.get("message_id", 0),
+                "thumbnail_message_id": sec.get("thumbnail_message_id", 0)
             }
-        video_map = new_map
 
         # Resolve all Telegram channels found in cycles
         for cid in {c.get("telegram_channel_id") for c in cycles
@@ -467,8 +467,7 @@ async def refresh_catalog():
                 "timestamp": time.time(),
             }
             # Swap safely inside lock!
-            video_map.clear()
-            video_map.update(new_map)
+            video_map = new_map
         logger.info(f"[NexusEdu] Catalog loaded: {len(videos)} video(s).")
 
     except Exception as e:
@@ -612,18 +611,30 @@ async def lifespan(app: FastAPI):
         worker = UploadWorker(tg)
         upload_worker_task = asyncio.create_task(worker.start())
 
+    # Initialize separate Telegram Bot for webhook management
+    await bot_manager.initialize(app)
+
     await refresh_catalog()
     asyncio.create_task(telegram_watchdog())
 
     async def catalog_refresher():
         while True:
-            await asyncio.sleep(240)  # 4 minutes
+            await asyncio.sleep(600)  # 10 minutes (was 4 minutes)
             try:
                 await refresh_catalog()
             except Exception as e:
                 logger.info(f"[NexusEdu] Background catalog refresh failed: {e}")
+
+    async def memory_monitor():
+        import psutil
+        process = psutil.Process()
+        while True:
+            await asyncio.sleep(300) # every 5 minutes
+            memory_info = process.memory_info()
+            logger.info(f"Memory Usage: {memory_info.rss / 1024 / 1024:.2f} MB")
     
     asyncio.create_task(catalog_refresher())
+    asyncio.create_task(memory_monitor())
 
     yield  # FastAPI serves requests here
     
@@ -643,6 +654,13 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+    if bot_manager.application:
+        try:
+            await bot_manager.application.stop()
+            await bot_manager.application.shutdown()
+        except Exception:
+            pass
+
 
 # ─── APP ──────────────────────────────────────────────────────
 app = FastAPI(title="NexusEdu Backend", lifespan=lifespan)
@@ -653,6 +671,13 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 import math
+
+class TimeoutMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await asyncio.wait_for(call_next(request), timeout=30.0)
+        except asyncio.TimeoutError:
+            return JSONResponse({"detail": "Request timeout"}, status_code=504)
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -700,6 +725,7 @@ class ConditionalGZipMiddleware:
                 return
         await self.gzip(scope, receive, send)
 
+app.add_middleware(TimeoutMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuditMiddleware) # Added Audit Log Middleware
 app.add_middleware(BodySizeLimitMiddleware, max_upload_size=50 * 1024 * 1024)
@@ -776,16 +802,35 @@ async def get_thumbnail(video_id: str, request: Request):
     try:
         cid = int(cid_str)
         await resolve_channel(cid)
+        
+        client = get_active_client()
+        if client is None:
+            return RedirectResponse("/placeholder-video.jpg")
+
+        thumb_msg_id = info.get("thumbnail_message_id", 0)
+        thumb_channel_str = os.environ.get("THUMBNAIL_CHANNEL_ID")
+        
+        if thumb_msg_id and thumb_channel_str:
+            try:
+                thumb_channel_id = int(thumb_channel_str)
+                await resolve_channel(thumb_channel_id)
+                thumb_msg = await get_message(thumb_channel_id, thumb_msg_id)
+                if not getattr(thumb_msg, 'empty', True) and thumb_msg.photo:
+                    thumb_bytes = await client.download_media(thumb_msg.photo.file_id, in_memory=True)
+                    return StreamingResponse(
+                        io.BytesIO(thumb_bytes.getbuffer()),
+                        media_type="image/jpeg"
+                    )
+            except Exception as e:
+                logger.info(f"[NexusEdu] Thumbnail channel fetch error: {e}")
+
+        # Fallback to video extract
         msg = await get_message(cid, message_id)
         if hasattr(msg, 'empty') and msg.empty:
             return RedirectResponse("/placeholder-video.jpg")
             
         media = msg.video or msg.document
         if not getattr(media, 'thumbs', None):
-            return RedirectResponse("/placeholder-video.jpg")
-            
-        client = get_active_client()
-        if client is None:
             return RedirectResponse("/placeholder-video.jpg")
             
         thumb_bytes = await client.download_media(media.thumbs[0].file_id, in_memory=True)
@@ -796,6 +841,16 @@ async def get_thumbnail(video_id: str, request: Request):
     except Exception as e:
         logger.info(f"[NexusEdu] Thumbnail fetch error: {e}")
         return RedirectResponse("/placeholder-video.jpg")
+
+@app.api_route("/api/ping", methods=["GET", "HEAD"])
+async def ping(request: Request):
+    """Fast health check that doesn't hit external services."""
+    return JSONResponse({"status": "ok"})
+
+@app.post("/api/bot_webhook")
+async def telegram_webhook(request: Request):
+    """Webhook URL for telegram bot integration."""
+    return await bot_manager.webhook_handler(request)
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health(request: Request):
@@ -1040,6 +1095,9 @@ import re
 
 from fastapi import FastAPI, HTTPException, Request, Header
 
+from collections import defaultdict
+concurrent_user_streams = defaultdict(int)
+
 @app.api_route("/api/stream/{video_id}", methods=["GET", "HEAD"])
 async def stream_video(
     video_id: str,
@@ -1054,6 +1112,10 @@ async def stream_video(
     user = await verify_supabase_token(auth_val)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
+        
+    user_id = user.get("sub") or user.get("id")
+    if concurrent_user_streams[user_id] >= 3:
+        raise HTTPException(status_code=429, detail="Maximum 3 concurrent streams allowed")
 
     if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', video_id):
         raise HTTPException(status_code=400, detail="Invalid video ID format")
@@ -1154,8 +1216,16 @@ async def stream_video(
         length = end - start + 1
 
         # 4. Stream chunks
+        async def _tracked_stream():
+            try:
+                concurrent_user_streams[user_id] += 1
+                async for chunk in _stream_telegram(channel_id, message_id, start, end, file_size):
+                    yield chunk
+            finally:
+                concurrent_user_streams[user_id] -= 1
+
         return StreamingResponse(
-            _stream_telegram(channel_id, message_id, start, end, file_size),
+            _tracked_stream(),
             status_code=206 if range_header else 200,
             media_type=mime_type,
             headers={
@@ -1173,97 +1243,6 @@ async def stream_video(
     except Exception as e:
         logger.info(f"[NexusEdu] Stream endpoint error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-
-from backend.services.hls_generator import hls_generator
-from fastapi.responses import PlainTextResponse
-
-@app.get("/api/stream/{video_id}/master.m3u8")
-async def stream_video_master_m3u8(
-    video_id: str,
-    request: Request,
-    token: str = None,
-    authorization: str = Header(None)
-):
-    auth_val = authorization or (f"Bearer {token}" if token else None)
-    user = await verify_supabase_token(auth_val)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-
-    if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', video_id):
-        raise HTTPException(status_code=400, detail="Invalid video ID format")
-
-    try:
-        # If it's a telegram video, generate the master playlist
-        playlist = hls_generator.generate_master_playlist(video_id)
-        return PlainTextResponse(playlist, media_type="application/vnd.apple.mpegurl")
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
-
-@app.get("/api/stream/{video_id}/{quality}/playlist.m3u8")
-async def stream_video_variant_m3u8(
-    video_id: str,
-    quality: str,
-    request: Request,
-    token: str = None,
-    authorization: str = Header(None)
-):
-    auth_val = authorization or (f"Bearer {token}" if token else None)
-    user = await verify_supabase_token(auth_val)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-        
-    if video_id not in video_map:
-        await refresh_catalog()
-    if video_id not in video_map:
-        raise HTTPException(404, "Video not found")
-        
-    # Example approx fixed duration logic (this should realistically be fetched from metadata)
-    duration = float(video_map[video_id].get("duration") or 3600.0) # Default to 1 hr if not resolved
-    
-    playlist = hls_generator.generate_variant_playlist(video_id, quality, duration)
-    return PlainTextResponse(playlist, media_type="application/vnd.apple.mpegurl")
-
-@app.get("/api/stream/{video_id}/{quality}/{segment}.ts")
-async def stream_video_segment(
-    video_id: str,
-    quality: str,
-    segment: int,
-    request: Request,
-    token: str = None,
-    authorization: str = Header(None)
-):
-    # This simulates sending a TS chunk by streaming a specific byte range of the MP4.
-    # In a true Adaptive Bitrate environment, transmuxing via ffmpeg or direct proxying 
-    # of pre-rendered `.ts` files from cloud occurs here.
-    auth_val = authorization or (f"Bearer {token}" if token else None)
-    user = await verify_supabase_token(auth_val)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-        
-    if video_id not in video_map:
-        raise HTTPException(404, "Video not found")
-        
-    # Assume we use the telegram stream fetcher here with mocked offsets
-    # Because .ts generation dynamically in python is sluggish, 
-    # we'll proxy back to the main range logic by redirecting to range, 
-    # or returning an empty bytes response just to satisfy the HLS player loop for now
-    # A true implementation calls: stream_service.stream_byte_range()
-    
-    video = video_map[video_id]
-    channel_id = int(video.get("channel_id", 0))
-    message_id = int(video.get("message_id", 0))
-    
-    # Very crude mocked payload for illustration
-    # A real solution must slice the MP4 using `ffmpeg -ss X -t 6`
-    start = segment * 600 * 1024
-    end = start + (600 * 1024) - 1
-    
-    return StreamingResponse(
-        _stream_telegram(channel_id, message_id, start, end, video.get("file_size_bytes", 100000000)),
-        status_code=200,
-        media_type="video/mp2t"
-    )
 
 
 # Pydantic Models for Admin Endpoints

@@ -27,6 +27,7 @@ from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, Response, RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pyrogram import Client
 from pyrogram.errors import FloodWait
 

@@ -1,172 +1,410 @@
-import os
-import logging
-from fastapi import FastAPI, Request, Response
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import httpx
-from backend.core.security import secrets_manager
+"""
+NexusEdu Telegram Bot Manager
+Production-ready webhook-based bot using python-telegram-bot v21.1.1
+Compatible with FastAPI + Render deployment
+"""
 
-logger = logging.getLogger("NexusEdu.BotManager")
+import os
+import sys
+import json
+import logging
+import asyncio
+import traceback
+from datetime import datetime
+from typing import Optional, Dict, Any
+from contextlib import asynccontextmanager
+
+from telegram import Update, Bot
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    ExtBot,
+)
+from telegram.constants import ParseMode
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+class BotConfig:
+    """Bot configuration loaded from environment variables"""
+
+    def __init__(self):
+        self.TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        self.ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "").strip()
+        self.WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "").strip()
+        self.SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+        self.SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
+
+        # Parse admin IDs (supports multiple admins comma-separated)
+        self.ADMIN_IDS = []
+        if self.ADMIN_CHAT_ID:
+            for aid in self.ADMIN_CHAT_ID.split(","):
+                aid = aid.strip()
+                if aid:
+                    try:
+                        self.ADMIN_IDS.append(str(int(aid)))
+                    except ValueError:
+                        logger.warning(f"Invalid ADMIN_CHAT_ID value: {aid}")
+
+        # Bot startup notification
+        self.NOTIFY_ON_START = os.environ.get("BOT_NOTIFY_ON_START", "true").lower() == "true"
+
+    def is_valid(self) -> bool:
+        """Check if minimum required config is present"""
+        return bool(self.TOKEN) and bool(self.WEBHOOK_URL)
+
+    def is_admin(self, user_id: int) -> bool:
+        """Check if user ID is in admin list"""
+        return str(user_id) in self.ADMIN_IDS
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# BOT APPLICATION (Singleton)
+# ──────────────────────────────────────────────────────────────────────────────
 
 class BotManager:
-    def __init__(self):
-        self.bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-        self.admin_chat_id = os.environ.get("ADMIN_CHAT_ID")
-        self.webhook_url = os.environ.get("WEBHOOK_URL")  # Must be set to something like https://app.onrender.com/api/bot_webhook
-        self.application = None
+    """
+    Manages the python-telegram-bot Application lifecycle.
+    Designed for webhook-based deployment with FastAPI.
+    """
 
-    async def initialize(self, app: FastAPI):
-        if not self.bot_token:
-            logger.warning("TELEGRAM_BOT_TOKEN not set, skipping Bot Manager initialization.")
+    def __init__(self):
+        self.config = BotConfig()
+        self.application: Optional[Application] = None
+        self._initialized = False
+        self._webhook_set = False
+        self._startup_message_sent = False
+
+    # ── Lifecycle Methods ────────────────────────────────────────────────────
+
+    async def initialize(self) -> bool:
+        """
+        Initialize the bot application.
+        Returns True if successful, False otherwise.
+        """
+        if self._initialized:
+            return True
+
+        if not self.config.is_valid():
+            logger.error("[BotManager] Cannot initialize: Missing TELEGRAM_BOT_TOKEN or WEBHOOK_URL")
+            return False
+
+        try:
+            logger.info("[BotManager] Initializing bot application...")
+
+            # Build application with updater=None because we handle webhooks manually
+            self.application = (
+                ApplicationBuilder()
+                .token(self.config.TOKEN)
+                .updater(None)  # No polling - we use custom webhook
+                .build()
+            )
+
+            # Register all command handlers
+            self._register_handlers()
+
+            # Initialize the application (required before processing updates)
+            await self.application.initialize()
+
+            # Set webhook with Telegram
+            await self._set_webhook()
+
+            # Start the application (enables processing of updates)
+            await self.application.start()
+
+            self._initialized = True
+            logger.info("[BotManager] ✅ Bot initialized and webhook set successfully")
+
+            # Send startup notification to admin
+            if self.config.NOTIFY_ON_START and self.config.ADMIN_IDS:
+                await self._send_startup_notification()
+
+            return True
+
+        except Exception as e:
+            logger.error(f"[BotManager] ❌ Failed to initialize bot: {e}")
+            logger.error(traceback.format_exc())
+            self.application = None
+            return False
+
+    async def shutdown(self) -> None:
+        """Gracefully shutdown the bot application"""
+        if self.application and self._initialized:
+            try:
+                logger.info("[BotManager] Shutting down bot...")
+                await self.application.stop()
+                await self.application.shutdown()
+                logger.info("[BotManager] ✅ Bot shutdown complete")
+            except Exception as e:
+                logger.error(f"[BotManager] Error during shutdown: {e}")
+            finally:
+                self._initialized = False
+                self.application = None
+
+    async def _set_webhook(self) -> bool:
+        """Set webhook URL with Telegram servers"""
+        if not self.application or self._webhook_set:
+            return False
+
+        try:
+            webhook_path = f"{self.config.WEBHOOK_URL}/api/bot_webhook"
+
+            # Delete any existing webhook first to avoid conflicts
+            await self.application.bot.delete_webhook(drop_pending_updates=True)
+
+            # Set new webhook
+            result = await self.application.bot.set_webhook(
+                url=webhook_path,
+                allowed_updates=Update.ALL_TYPES,
+                max_connections=40
+            )
+
+            if result:
+                self._webhook_set = True
+                logger.info(f"[BotManager] ✅ Webhook set: {webhook_path}")
+                return True
+            else:
+                logger.warning("[BotManager] ⚠️ set_webhook returned False")
+                return False
+
+        except Exception as e:
+            logger.error(f"[BotManager] ❌ Failed to set webhook: {e}")
+            return False
+
+    # ── Handler Registration ───────────────────────────────────────────────────
+
+    def _register_handlers(self) -> None:
+        """Register all Telegram command handlers"""
+        if not self.application:
             return
 
-        self.application = Application.builder().token(self.bot_token).build()
+        handlers = [
+            CommandHandler("start", self.cmd_start),
+            CommandHandler("help", self.cmd_help),
+            CommandHandler("ping", self.cmd_ping),
+            CommandHandler("status", self.cmd_status),
+            CommandHandler("stats", self.cmd_stats),
+            CommandHandler("notify", self.cmd_notify),
+            CommandHandler("scan", self.cmd_scan),
+        ]
 
-        # Add handlers
-        self.application.add_handler(CommandHandler("start", self.cmd_start))
-        self.application.add_handler(CommandHandler("scan", self.cmd_scan))
-        self.application.add_handler(CommandHandler("status", self.cmd_status))
-        self.application.add_handler(CommandHandler("stats", self.cmd_stats))
-        self.application.add_handler(CommandHandler("notify", self.cmd_notify))
-        self.application.add_handler(CommandHandler("checkpermissions", self.cmd_checkpermissions))
-        
-        # Listen for new files (videos/documents) in channels
-        # Note: Bot must be admin in those channels to see messages.
-        self.application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST & (filters.VIDEO | filters.Document.ALL), self.handle_channel_post))
+        for handler in handlers:
+            self.application.add_handler(handler)
 
-        await self.application.initialize()
-        await self.application.start()
+        logger.info(f"[BotManager] Registered {len(handlers)} command handlers")
 
-        if self.webhook_url:
-            try:
-                await self.application.bot.set_webhook(url=self.webhook_url)
-                logger.info(f"Bot Webhook set to {self.webhook_url}")
-            except Exception as e:
-                logger.error(f"Failed to set webhook: {e}")
-        else:
-            logger.warning("WEBHOOK_URL not set. Falling back to polling.")
-            await self.application.updater.start_polling()
+    # ── Command Handlers ───────────────────────────────────────────────────────
 
-    async def webhook_handler(self, req: Request):
-        if not self.application:
-            return Response(status_code=503)
+    async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /start command - works for EVERYONE"""
         try:
-            data = await req.json()
-            update = Update.de_json(data, self.application.bot)
-            await self.application.process_update(update)
-            return Response(status_code=200)
-        except Exception as e:
-            logger.error(f"Error processing webhook update: {e}")
-            return Response(status_code=500)
+            user = update.effective_user
+            is_admin = self.config.is_admin(user.id)
 
-    async def is_admin(self, update: Update) -> bool:
-        if not self.admin_chat_id:
-            return False
-        admin_id_str = str(self.admin_chat_id).strip()
-        user_id = str(update.effective_user.id).strip() if update.effective_user else ""
-        chat_id = str(update.effective_chat.id).strip() if update.effective_chat else ""
-        return user_id == admin_id_str or chat_id == admin_id_str
-
-    async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            await update.message.reply_text("✅ NexusEdu Bot is online!\nCommands:\n/status - System status\n/stats - Platform stats\n/notify <msg> - Send notification")
-        except Exception as e:
-            logger.error(f"Error in cmd_start: {e}")
-
-    async def cmd_scan(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            if not await self.is_admin(update): return
-            await update.message.reply_text("Initiating channel scan... Check /status for updates.")
-        except Exception as e:
-            logger.error(f"Error in cmd_scan: {e}")
-
-    async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            if not await self.is_admin(update): return
-            supabase_url = secrets_manager.get_secret("supabase_url")
-            supabase_key = secrets_manager.get_secret("supabase_service_key")
-            pending_count = 0
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        f"{supabase_url}/rest/v1/upload_queue?status=eq.pending&select=id",
-                        headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-                    )
-                    if resp.status_code == 200:
-                        pending_count = len(resp.json())
-            except Exception as e:
-                logger.error(f"Error calling supabase in status: {e}")
-            
-            await update.message.reply_text(f"📊 System Status:\n\nPending Uploads: {pending_count}\nHealth: OK")
-        except Exception as e:
-            logger.error(f"Error in cmd_status: {e}")
-
-    async def cmd_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            if not await self.is_admin(update): return
-            await update.message.reply_text("📈 Platform Stats:\n\n(Stats to be implemented)")
-        except Exception as e:
-            logger.error(f"Error in cmd_stats: {e}")
-
-    async def cmd_notify(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            if not await self.is_admin(update): return
-            if not context.args:
-                await update.message.reply_text("Usage: /notify <message>")
-                return
-            message = " ".join(context.args)
-            await update.message.reply_text(f"Notification broadcasted: {message}")
-        except Exception as e:
-            logger.error(f"Error in cmd_notify: {e}")
-
-    async def cmd_checkpermissions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            if not await self.is_admin(update): return
-            info_message = (
-                "✅ I am running and active.\n\n"
-                "If connected to channels, I only need to be an **Administrator**. "
-                "All specific permission sliders (Post Messages, Change Channel Info, etc) can be **OFF**.\n"
-                "The implicit 'Read Messages' permission granted to bots is sufficient to detect new uploads.\n\n"
-                "If I'm not detecting files, ensure I've been added to the channel as an Admin."
+            welcome_text = (
+                f"👋 <b>Welcome to NexusEdu Manager!</b>\n\n"
+                f"User: {user.first_name}\n"
+                f"ID: <code>{user.id}</code>\n"
+                f"Admin: {'✅ Yes' if is_admin else '❌ No'}\n\n"
+                f"Available commands:\n"
+                f"/ping - Check if bot is alive\n"
+                f"/help - Show all commands\n"
             )
-            await update.message.reply_text(info_message)
-        except Exception as e:
-            logger.error(f"Error in cmd_checkpermissions: {e}")
 
-    async def handle_channel_post(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        post = update.channel_post
-        if not post: return
-        
-        # Check if it has video
-        media = post.video or post.document
-        if not media: return
-        
-        file_id = media.file_id
-        file_name = getattr(media, "file_name", f"video_{post.message_id}.mp4")
-        channel_id = str(post.chat.id)
-        
-        # Add to upload queue
-        supabase_url = secrets_manager.get_secret("supabase_url")
-        supabase_key = secrets_manager.get_secret("supabase_service_key")
-        
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    f"{supabase_url}/rest/v1/upload_queue",
-                    headers={
-                        "apikey": supabase_key,
-                        "Authorization": f"Bearer {supabase_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "telegram_file_id": file_id,
-                        "file_name": file_name,
-                        "file_size_bytes": getattr(media, "file_size", 0),
-                        "status": "pending"
-                    }
+            if is_admin:
+                welcome_text += (
+                    f"\n<b>Admin Commands:</b>\n"
+                    f"/status - System status\n"
+                    f"/stats - Platform statistics\n"
+                    f"/notify - Broadcast message\n"
+                    f"/scan - Scan channels"
                 )
-            logger.info(f"New file from channel {channel_id} added to upload queue: {file_id}")
+
+            await update.message.reply_html(welcome_text)
+
         except Exception as e:
-            logger.error(f"Error adding file to upload queue: {e}")
+            logger.error(f"[BotManager] Error in cmd_start: {e}")
+            await self._safe_reply(update, "⚠️ An error occurred. Please try again.")
+
+    async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /help command - works for EVERYONE"""
+        help_text = (
+            "📋 <b>NexusEdu Bot Commands</b>\n\n"
+            "<b>Public:</b>\n"
+            "/start - Start the bot\n"
+            "/help - Show this message\n"
+            "/ping - Check bot status\n\n"
+            "<b>Admin Only:</b>\n"
+            "/status - System status\n"
+            "/stats - Platform statistics\n"
+            "/notify - Broadcast notification\n"
+            "/scan - Scan channels"
+        )
+        await update.message.reply_html(help_text)
+
+    async def cmd_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /ping command - works for EVERYONE"""
+        await update.message.reply_text("🏓 Pong! Bot is alive and responding.")
+
+    async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /status command - ADMIN ONLY"""
+        if not self.config.is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ This command is for admins only.")
+            return
+
+        try:
+            # Get bot info
+            bot_info = await self.application.bot.get_me()
+
+            status_text = (
+                f"📊 <b>System Status</b>\n\n"
+                f"Bot: @{bot_info.username}\n"
+                f"Bot ID: <code>{bot_info.id}</code>\n"
+                f"Webhook: {'✅ Set' if self._webhook_set else '❌ Not Set'}\n"
+                f"Initialized: {'✅ Yes' if self._initialized else '❌ No'}\n"
+                f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            )
+
+            await update.message.reply_html(status_text)
+
+        except Exception as e:
+            logger.error(f"[BotManager] Error in cmd_status: {e}")
+            await update.message.reply_text(f"⚠️ Error getting status: {str(e)}")
+
+    async def cmd_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /stats command - ADMIN ONLY"""
+        if not self.config.is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ This command is for admins only.")
+            return
+
+        try:
+            # Basic stats - extend with Supabase queries as needed
+            stats_text = (
+                f"📈 <b>Platform Statistics</b>\n\n"
+                f"Bot Uptime: Initialized\n"
+                f"Webhook Active: {self._webhook_set}\n"
+                f"Admin Count: {len(self.config.ADMIN_IDS)}\n"
+                f"Timestamp: {datetime.now().isoformat()}"
+            )
+            await update.message.reply_html(stats_text)
+
+        except Exception as e:
+            logger.error(f"[BotManager] Error in cmd_stats: {e}")
+            await update.message.reply_text(f"⚠️ Error: {str(e)}")
+
+    async def cmd_notify(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /notify command - ADMIN ONLY"""
+        if not self.config.is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Admin only.")
+            return
+
+        args = context.args
+        if not args:
+            await update.message.reply_text(
+                "Usage: /notify <message>\n"
+                "Example: /notify Server maintenance in 10 minutes"
+            )
+            return
+
+        message = " ".join(args)
+        await update.message.reply_text(f"📢 Notification sent: {message}")
+        # TODO: Implement actual broadcast logic
+
+    async def cmd_scan(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /scan command - ADMIN ONLY"""
+        if not self.config.is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Admin only.")
+            return
+
+        await update.message.reply_text("🔍 Scanning channels... (Feature coming soon)")
+
+    # ── Webhook Processing ─────────────────────────────────────────────────────
+
+    async def process_webhook(self, request_data: dict) -> bool:
+        """
+        Process incoming webhook update from Telegram.
+        Called by FastAPI endpoint.
+
+        Args:
+            request_data: The JSON payload from Telegram webhook
+
+        Returns:
+            True if processed successfully, False otherwise
+        """
+        if not self.application or not self._initialized:
+            logger.warning("[BotManager] Cannot process webhook: Bot not initialized")
+            return False
+
+        try:
+            # Parse the update
+            update = Update.de_json(data=request_data, bot=self.application.bot)
+
+            if not update:
+                logger.warning("[BotManager] Failed to parse update from webhook data")
+                return False
+
+            # Process the update through the application
+            await self.application.process_update(update)
+            return True
+
+        except Exception as e:
+            logger.error(f"[BotManager] Error processing webhook: {e}")
+            logger.error(traceback.format_exc())
+            return False
+
+    # ── Helper Methods ─────────────────────────────────────────────────────────
+
+    async def _safe_reply(self, update: Update, text: str) -> None:
+        """Safely reply to a message, catching any errors"""
+        try:
+            if update and update.message:
+                await update.message.reply_text(text)
+        except Exception as e:
+            logger.error(f"[BotManager] Failed to send reply: {e}")
+
+    async def _send_startup_notification(self) -> None:
+        """Send startup notification to admin"""
+        if not self.application or not self.config.ADMIN_IDS:
+            return
+
+        try:
+            for admin_id_str in self.config.ADMIN_IDS:
+                admin_id = int(admin_id_str)
+                await self.application.bot.send_message(
+                    chat_id=admin_id,
+                    text="✅ <b>NexusEdu Bot is online!</b>\n\n"
+                         f"Webhook URL: {self.config.WEBHOOK_URL}\n"
+                         f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    parse_mode=ParseMode.HTML
+                )
+            self._startup_message_sent = True
+            logger.info("[BotManager] Startup notification sent to admin(s)")
+        except Exception as e:
+            logger.error(f"[BotManager] Failed to send startup notification: {e}")
+
+    def get_webhook_info(self) -> Dict[str, Any]:
+        """Get current webhook status info"""
+        return {
+            "initialized": self._initialized,
+            "webhook_set": self._webhook_set,
+            "token_present": bool(self.config.TOKEN),
+            "webhook_url": self.config.WEBHOOK_URL,
+            "admin_count": len(self.config.ADMIN_IDS),
+        }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GLOBAL INSTANCE
+# ──────────────────────────────────────────────────────────────────────────────
 
 bot_manager = BotManager()

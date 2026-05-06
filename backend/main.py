@@ -37,7 +37,7 @@ from backend.middleware.audit_middleware import AuditMiddleware
 from backend.services.telegram_upload_service import init_telegram_upload_service
 from backend.services.notification_service import init_notification_service
 from backend.workers.upload_worker import UploadWorker
-from backend.bot_manager import bot_manager
+from bot_manager import bot_manager
 from backend.api.admin.upload import router as upload_router
 
 
@@ -618,11 +618,12 @@ async def lifespan(app: FastAPI):
     # Start Telegram clients in BACKGROUND — don't block startup
     tg_task = asyncio.create_task(_start_telegram_clients())
 
-    # Initialize bot manager (also non-blocking)
-    try:
-        await bot_manager.initialize(app)
-    except Exception as e:
-        logger.error(f"[NexusEdu] Bot manager init failed: {e}")
+    # Initialize bot manager FIRST (non-blocking)
+    bot_ok = await bot_manager.initialize()
+    if bot_ok:
+        logger.info("[NexusEdu] ✅ Bot manager initialized")
+    else:
+        logger.warning("[NexusEdu] ⚠️ Bot manager failed to initialize - bot commands won't work")
 
     # Wait a bit for Telegram to connect, but don't block forever
     try:
@@ -694,12 +695,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    if bot_manager.application:
-        try:
-            await bot_manager.application.stop()
-            await bot_manager.application.shutdown()
-        except Exception:
-            pass
+    await bot_manager.shutdown()
 
 
 # ─── APP ──────────────────────────────────────────────────────
@@ -895,7 +891,27 @@ async def ping(request: Request):
 
 @app.post("/api/bot_webhook")
 async def telegram_webhook(request: Request):
-    return await bot_manager.webhook_handler(request)
+    """Receive webhook updates from Telegram"""
+    try:
+        data = await request.json()
+        success = await bot_manager.process_webhook(data)
+        return JSONResponse(content={"ok": success}, status_code=200)
+    except Exception as e:
+        logger.error(f"[Webhook] Error: {e}")
+        return JSONResponse(content={"ok": False}, status_code=200)
+
+@app.get("/api/setup_webhook")
+async def setup_webhook():
+    """Manually trigger webhook setup"""
+    try:
+        success = await bot_manager._set_webhook()
+        return {
+            "success": success,
+            "webhook_url": bot_manager.config.WEBHOOK_URL,
+            "info": bot_manager.get_webhook_info()
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])

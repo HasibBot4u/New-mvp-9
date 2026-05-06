@@ -346,12 +346,18 @@ class BotManager:
             return False
 
         try:
-            # Parse the update
+            # CRITICAL: Pass the BOT instance, NOT the Application instance
+            # This is the #1 cause of webhook commands not working in v21
             update = Update.de_json(data=request_data, bot=self.application.bot)
 
             if not update:
                 logger.warning("[BotManager] Failed to parse update from webhook data")
                 return False
+
+            # Log the update for debugging
+            logger.debug(f"[BotManager] Processing update: {update.update_id}")
+            if update.message:
+                logger.info(f"[BotManager] Message from {update.effective_user.id}: {update.message.text}")
 
             # Process the update through the application
             await self.application.process_update(update)

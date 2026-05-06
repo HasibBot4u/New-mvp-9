@@ -37,7 +37,7 @@ from backend.middleware.audit_middleware import AuditMiddleware
 from backend.services.telegram_upload_service import init_telegram_upload_service
 from backend.services.notification_service import init_notification_service
 from backend.workers.upload_worker import UploadWorker
-from bot_manager import bot_manager
+from backend.bot_manager import bot_manager
 from backend.api.admin.upload import router as upload_router
 
 

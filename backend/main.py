@@ -4,12 +4,15 @@ NexusEdu Backend — Fixed Version v1.2.0
 - Graceful fallback when credentials missing
 - Better error handling and logging
 """
+import os
+import sys
+import json
+import logging
+import traceback
 import asyncio
 import math
 import time
-import os
-import logging
-import traceback
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('NexusEdu')
@@ -894,6 +897,7 @@ async def telegram_webhook(request: Request):
     """Receive webhook updates from Telegram"""
     try:
         data = await request.json()
+        logger.info(f"[Webhook] Received update: {json.dumps(data)}")
         success = await bot_manager.process_webhook(data)
         return JSONResponse(content={"ok": success}, status_code=200)
     except Exception as e:

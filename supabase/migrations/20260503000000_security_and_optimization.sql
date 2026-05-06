@@ -29,14 +29,16 @@ CREATE INDEX IF NOT EXISTS idx_chapters_name_trgm ON chapters USING gin(name gin
 
 -- PART B — DATABASE CONSTRAINTS
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_source_type;
+UPDATE videos SET source_type = 'telegram' WHERE source_type NOT IN ('telegram', 'drive', 'youtube', 'local') OR source_type IS NULL;
 ALTER TABLE videos ADD CONSTRAINT chk_source_type 
   CHECK (source_type IN ('telegram', 'drive', 'youtube', 'local'));
 
-UPDATE videos SET duration = '00:00:00' WHERE duration !~ '^([0-9]{2}):([0-9]{2}):([0-9]{2})$' OR duration IS NULL;
+UPDATE videos SET duration = '00:00:00' WHERE duration IS NULL;
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_duration_format;
+-- Made constraint less strict to allow things like 12:34 or 1:23:45
 ALTER TABLE videos ADD CONSTRAINT chk_duration_format 
-  CHECK (duration ~ '^([0-9]{2}):([0-9]{2}):([0-9]{2})$');
+  CHECK (duration IS NULL OR duration ~ '^[0-9:]+$');
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_size_positive;
 ALTER TABLE videos ADD CONSTRAINT chk_size_positive 
@@ -44,7 +46,7 @@ ALTER TABLE videos ADD CONSTRAINT chk_size_positive
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_display_order;
 ALTER TABLE videos ADD CONSTRAINT chk_display_order 
-  CHECK (display_order >= 0);
+  CHECK (display_order IS NULL OR display_order >= 0);
 
 
 -- PART C — NEW TABLES

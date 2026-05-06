@@ -23,13 +23,10 @@ import { RouteAnalytics } from "@/components/seo/RouteAnalytics";
 
 function AuthManager() {
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        useAuthStore.getState().setUser(session.user);
-        useAuthStore.getState().setSession(session);
-        // Fetch role from profiles table if needed
-      }
-    });
+    const initAuth = async () => {
+      await useAuthStore.getState().hydrate();
+    };
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
@@ -39,6 +36,7 @@ function AuthManager() {
         } else {
           useAuthStore.getState().logout();
         }
+        useAuthStore.getState().setLoading(false);
       }
     );
 

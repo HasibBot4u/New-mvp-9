@@ -68,7 +68,6 @@ CREATE TABLE IF NOT EXISTS subjects (
 -- CYCLES
 CREATE TABLE IF NOT EXISTS cycles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     name_bn TEXT,
     description TEXT,
@@ -79,6 +78,7 @@ CREATE TABLE IF NOT EXISTS cycles (
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+ALTER TABLE cycles ADD COLUMN IF NOT EXISTS subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE;
 
 -- CHAPTERS
 CREATE TABLE IF NOT EXISTS chapters (
@@ -203,7 +203,6 @@ CREATE TABLE IF NOT EXISTS notifications (
 -- LIVE CLASSES
 CREATE TABLE IF NOT EXISTS live_classes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    subject_id UUID REFERENCES subjects(id) ON DELETE SET NULL,
     cycle_id UUID REFERENCES cycles(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     title_bn TEXT,
@@ -218,6 +217,7 @@ CREATE TABLE IF NOT EXISTS live_classes (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now()
 );
+ALTER TABLE live_classes ADD COLUMN IF NOT EXISTS subject_id UUID REFERENCES subjects(id) ON DELETE SET NULL;
 
 -- ANNOUNCEMENTS
 CREATE TABLE IF NOT EXISTS announcements (

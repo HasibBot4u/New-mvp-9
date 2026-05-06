@@ -933,8 +933,18 @@ async def health(request: Request):
     except Exception:
         pass
 
+    # Check primary telegram client status
     tg_status = "connected" if is_conn else ("reconnecting" if tg is not None else "disconnected")
 
+    # Check bot status
+    bot_status = "running"
+    if not bot_manager.is_running:
+        if not bot_manager.config.TOKEN:
+            bot_status = "not_configured"
+        else:
+            bot_status = "stopped"
+
+    # Check supabase connection
     sb_status = "ok"
     if SUPABASE_URL and SUPABASE_ANON_KEY:
         try:
@@ -950,8 +960,7 @@ async def health(request: Request):
     else:
         sb_status = "unconfigured"
 
-    overall = "ok" if (is_conn and sb_status == "ok") else "degraded"
-
+    # Check secondary telegram client
     tg2_status = "not_configured"
     if SESSION_STRING_2:
         try:
@@ -959,13 +968,29 @@ async def health(request: Request):
         except Exception:
             tg2_status = "disconnected"
 
+    # Evaluate overall health
+    is_healthy = True
+    if sb_status == "error":
+        is_healthy = False
+    if tg_status == "disconnected" and HAS_TELEGRAM_CREDS:
+        is_healthy = False
+    if bot_status == "stopped":
+        is_healthy = False
+
+    overall = "healthy" if is_healthy else "degraded"
+
     return JSONResponse({
         "status": overall,
         "version": "v1.2.0",
-        "telegram": tg_status,
+        "telegram_client": tg_status,
         "telegram_secondary": tg2_status,
+        "telegram_bot": bot_status,
         "supabase": sb_status,
-        "telegram_configured": HAS_TELEGRAM_CREDS
+        "details": {
+            "telegram_configured": HAS_TELEGRAM_CREDS,
+            "bot_configured": bot_status != "not_configured",
+            "supabase_configured": sb_status != "unconfigured"
+        }
     })
 
 

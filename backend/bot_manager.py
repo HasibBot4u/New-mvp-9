@@ -326,7 +326,104 @@ class BotManager:
             await update.message.reply_text("❌ Admin only.")
             return
 
-        await update.message.reply_text("🔍 Scanning channels... (Feature coming soon)")
+        import os
+        import httpx
+        import time
+        from backend.main import get_active_client
+        import asyncio
+
+        client = get_active_client()
+        if not client:
+            await update.message.reply_text("❌ No active Pyrogram client.")
+            return
+
+        status_msg = await update.message.reply_text("🔍 Starting scan...")
+
+        channels_to_scan = []
+        for key, val in os.environ.items():
+            if key.endswith("_CHANNEL_ID"):
+                try:
+                    cid = int(val)
+                    if cid != 0 and cid not in channels_to_scan:
+                        channels_to_scan.append(cid)
+                except ValueError:
+                    pass
+
+        if not channels_to_scan:
+            await status_msg.edit_text("❌ No channels configured.")
+            return
+
+        total_found = 0
+        errors = 0
+        per_channel = {}
+        
+        last_update = time.time()
+        
+        for cid in channels_to_scan:
+            per_channel[cid] = 0
+            try:
+                # Ensure we can access the chat
+                await client.get_chat(cid)
+                
+                async for msg in client.get_chat_history(cid):
+                    try:
+                        media = msg.video or msg.document
+                        if not media:
+                            continue
+                            
+                        # Extract info
+                        size = media.file_size or 0
+                        mime = getattr(media, 'mime_type', 'video/mp4') or 'video/mp4'
+                        file_name = getattr(media, 'file_name', '') or ''
+                        
+                        # Only video and likely documents
+                        if not mime.startswith('video/') and not file_name.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.webm')):
+                            continue
+                            
+                        # Add to supabase
+                        if self.config.SUPABASE_URL and self.config.SUPABASE_SERVICE_KEY:
+                            data = {
+                                "title": file_name if file_name else f"Video {msg.id}",
+                                "source_type": "telegram",
+                                "telegram_channel_id": str(cid),
+                                "telegram_message_id": msg.id,
+                                "size_mb": round(size / (1024 * 1024), 2) if size else 0,
+                                "is_active": False # Don't activate automatically
+                            }
+                            async with httpx.AsyncClient(timeout=10.0) as hclient:
+                                await hclient.post(
+                                    f"{self.config.SUPABASE_URL}/rest/v1/videos",
+                                    headers={
+                                        "apikey": self.config.SUPABASE_SERVICE_KEY,
+                                        "Authorization": f"Bearer {self.config.SUPABASE_SERVICE_KEY}",
+                                        "Content-Type": "application/json",
+                                        "Prefer": "return=minimal"
+                                    },
+                                    json=data
+                                )
+                                
+                        total_found += 1
+                        per_channel[cid] += 1
+                        
+                        # Progress update every 10 seconds
+                        if time.time() - last_update > 10:
+                            await status_msg.edit_text(f"⏳ Scanning...\nFound: {total_found}\nErrors: {errors}\nCurrent Channel: {cid}")
+                            last_update = time.time()
+                            
+                    except Exception as e:
+                        errors += 1
+                        logger.error(f"Error processing message {msg.id} in {cid}: {e}")
+                        
+            except Exception as e:
+                errors += 1
+                logger.error(f"Error scanning channel {cid}: {e}")
+
+        # Final report
+        report = f"✅ Scan Complete\nTotal Found: {total_found}\nErrors: {errors}\n\nCounts per channel:\n"
+        for cid, count in per_channel.items():
+            report += f"{cid}: {count}\n"
+            
+        await status_msg.edit_text(report)
 
     # ── Webhook Processing ─────────────────────────────────────────────────────
 

@@ -84,7 +84,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 3. API Catalog - Stale-while-revalidate for 1 hour
-  if (url.includes('/api/catalog') || url.includes('/api/v1/catalog')) {
+  if (url.includes('/rest/v1/subjects') || url.includes('/rest/v1/cycles') || url.includes('/rest/v1/chapters') || url.includes('/rest/v1/videos')) {
     event.respondWith(
       caches.open(DYNAMIC_CACHE).then((cache) => {
         return cache.match(event.request).then((cachedResponse) => {

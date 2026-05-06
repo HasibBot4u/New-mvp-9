@@ -66,6 +66,62 @@ The standard Telegram Bot API (the simple one everyone knows) has a **hard 20MB 
 
 ---
 
+## FINDING THE CORRECT CHANNEL ID (Crucial)
+
+Many users incorrectly provide a User ID instead of a Channel ID when configuring the platform.
+
+**Understanding Telegram IDs:**
+- **User IDs** are typically 6-10 digits (e.g., `7950033441`).
+- **Private Channel IDs** ALWAYS start with `-100` followed by 13 digits (e.g., `-1001234567890`).
+
+If you forward a message from your channel to `@userinfobot`, it will show you the **sender's User ID** (your own ID, or the channel owner's ID), NOT the actual Channel ID.
+
+**How to get the CORRECT Channel ID:**
+1. **Invite a Bot:** Add `@userinfobot` (or your own bot) as an Administrator to your channel.
+2. **Send a Message:** Send any test message in the channel.
+3. The bot will receive the message and reply with the true Channel ID (e.g., `-100xxxxxxx`).
+
+**Python Script Fallback:**
+If you already use Pyrogram, you can easily fetch the ID of a channel by its name:
+```python
+from pyrogram import Client
+app = Client("my_account", api_id=12345678, api_hash="abcdef...")
+async def main():
+    async with app:
+        chat = await app.get_chat("NexusEdu Thumbnails")
+        print(chat.id)  # Returns -100xxxxxxxxxxx
+app.run(main())
+```
+
+---
+
+## TELEGRAM BOT PERMISSIONS (For the Webhook Manager)
+
+The platform runs a pure Telegram Bot using `python-telegram-bot` to monitor channels and manage uploads when the backend server is idle.
+
+**CRITICAL: Bot Permissions in Channels**
+
+The bot does **NOT** need the following permissions in channels:
+- Change Channel Info: **OFF**
+- Post Messages: **OFF**
+- Edit Messages of Others: **OFF**
+- Delete Messages of Others: **OFF**
+- Post Stories: **OFF**
+- Edit Stories of Others: **OFF**
+- Delete Stories of Others: **OFF**
+- Manage Direct Messages: **OFF** (This is for user messaging, not channel posts)
+- Invite Users via Link: **OFF**
+- Manage Live Streams: **OFF**
+- Add New Admins: **OFF**
+- Ban Users: **OFF**
+
+**The ONLY permission the bot needs is Implicit Read Access.**
+When you add a bot as an Administrator to a channel (even if you turn all the sliders above to "OFF"), Telegram automatically grants the bot permission to **Read Messages**. This is how the backend `MessageHandler` listens for new `CHANNEL_POST` updates (new videos being uploaded).
+
+To verify if your bot can see channel messages, run the `/checkpermissions` admin command to the bot directly in a private message, or watch the backend logs.
+
+---
+
 ## THE SESSION STRING — HOW TELEGRAM AUTH WORKS
 
 Normal Telegram login requires entering your phone number and a one-time OTP code every time. For a server that restarts automatically, this is impossible.

@@ -1,5 +1,7 @@
 const CACHE_NAME = 'nexusedu-cache-v1';
 const DYNAMIC_CACHE = 'nexusedu-dynamic-v1';
+const ASSET_CACHE = 'nexusedu-assets-v1';
+const THUMBNAIL_CACHE = 'nexusedu-thumbnails-v1';
 
 const STATIC_ASSETS = [
   '/',
@@ -22,7 +24,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys
-          .filter((key) => key !== CACHE_NAME && key !== DYNAMIC_CACHE)
+          .filter((key) => ![CACHE_NAME, DYNAMIC_CACHE, ASSET_CACHE, THUMBNAIL_CACHE].includes(key))
           .map((key) => caches.delete(key))
       );
     })
@@ -30,7 +32,17 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+function isAsset(url) {
+  return url.match(/\.(js|css|woff2?|ttf|eot|svg)$/i);
+}
+
+function isThumbnail(url) {
+  return url.match(/\.(jpg|jpeg|png|webp|gif)$/i) || url.includes('thumbnail');
+}
+
 self.addEventListener('fetch', (event) => {
+  const url = event.request.url;
+
   // Navigation requests for SPA
   if (event.request.mode === 'navigate') {
     event.respondWith(
@@ -41,35 +53,47 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // API requests
-  if (event.request.url.includes('/api/v1/catalog')) {
-    // Stale-while-revalidate for catalog
+  // 1. Static Assets (JS/CSS) - Cache First for 1 year
+  if (isAsset(url)) {
     event.respondWith(
-      caches.open(DYNAMIC_CACHE).then((cache) => {
-        return cache.match(event.request).then((response) => {
-          const fetchPromise = fetch(event.request).then((networkResponse) => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
-          });
-          return response || fetchPromise;
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          const resClone = response.clone();
+          caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, resClone));
+          return response;
         });
       })
     );
     return;
   }
 
-  // Images and other assets (Cache First)
-  if (event.request.destination === 'image' || event.request.destination === 'font') {
+  // 2. Thumbnails - Cache First for 7 days
+  if (isThumbnail(url)) {
     event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(event.request).then((networkResponse) => {
-          return caches.open(DYNAMIC_CACHE).then((cache) => {
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached; // Expiration checks could be implemented with DB/headers, keep simple Cache First for now
+        return fetch(event.request).then((response) => {
+          const resClone = response.clone();
+          caches.open(THUMBNAIL_CACHE).then((cache) => cache.put(event.request, resClone));
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // 3. API Catalog - Stale-while-revalidate for 1 hour
+  if (url.includes('/api/catalog') || url.includes('/api/v1/catalog')) {
+    event.respondWith(
+      caches.open(DYNAMIC_CACHE).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          const fetchPromise = fetch(event.request).then((networkResponse) => {
             cache.put(event.request, networkResponse.clone());
             return networkResponse;
-          });
+          }).catch(() => null);
+
+          return cachedResponse || fetchPromise;
         });
       })
     );

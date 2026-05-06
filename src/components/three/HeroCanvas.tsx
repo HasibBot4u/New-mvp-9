@@ -1,7 +1,29 @@
-import { Suspense, useRef } from "react";
+import { Component, ErrorInfo, ReactNode, Suspense, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Float, MeshDistortMaterial, Sparkles } from "@react-three/drei";
 import * as THREE from "three";
+
+class CanvasErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; fallback?: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("WebGL Canvas Error:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || null;
+    }
+    return this.props.children;
+  }
+}
 
 function Crystal({
   position,
@@ -16,7 +38,6 @@ function Crystal({
     const t = state.clock.getElapsedTime();
     ref.current.rotation.x = t * 0.15 * speed;
     ref.current.rotation.y = t * 0.2 * speed;
-    // subtle mouse parallax
     const mx = state.mouse.x * 0.4;
     const my = state.mouse.y * 0.4;
     ref.current.position.x = position[0] + mx * 0.3;
@@ -58,15 +79,19 @@ function Scene() {
 
 export function HeroCanvas() {
   return (
-    <Canvas
-      camera={{ position: [0, 0, 5.5], fov: 45 }}
-      dpr={[1, 1.75]}
-      gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-      className="!absolute inset-0"
-    >
-      <Suspense fallback={null}>
-        <Scene />
-      </Suspense>
-    </Canvas>
+    <div className="absolute inset-0 bg-[#0A0A0A]">
+      <CanvasErrorBoundary fallback={<div className="absolute inset-0 bg-[#0A0A0A] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-[#0A0A0A] to-[#0A0A0A]" />}>
+        <Canvas
+          camera={{ position: [0, 0, 5.5], fov: 45 }}
+          dpr={[1, 1.5]}
+          gl={{ antialias: false, alpha: false, powerPreference: "default", preserveDrawingBuffer: false }}
+          className="!absolute inset-0"
+        >
+          <Suspense fallback={null}>
+            <Scene />
+          </Suspense>
+        </Canvas>
+      </CanvasErrorBoundary>
+    </div>
   );
 }

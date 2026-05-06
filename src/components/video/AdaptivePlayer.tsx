@@ -27,6 +27,7 @@ export const AdaptivePlayer = React.forwardRef<HTMLVideoElement, AdaptivePlayerP
   
   const [showSettings, setShowSettings] = useState(false);
   const [quality, setQuality] = useState<string>("auto");
+  const [isBuffering, setIsBuffering] = useState(true); // start buffering assuming it's loading
 
   // Since we removed HLS, this is now a simple MP4 player stream.
   // The backend could potentially support ?quality=720p 
@@ -52,12 +53,18 @@ export const AdaptivePlayer = React.forwardRef<HTMLVideoElement, AdaptivePlayerP
     if (videoRef.current && onLoadedMetadata) {
       onLoadedMetadata(videoRef.current.duration);
     }
+    setIsBuffering(false);
   }, [onLoadedMetadata, videoRef]);
 
   const qualities = ["auto", "360p", "480p", "720p", "1080p"];
 
   return (
     <div className="relative w-full h-full group bg-black">
+      {isBuffering && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+        </div>
+      )}
       <video
         ref={videoRef}
         src={getStreamUrl()}
@@ -68,8 +75,15 @@ export const AdaptivePlayer = React.forwardRef<HTMLVideoElement, AdaptivePlayerP
         className="w-full h-full"
         onTimeUpdate={handleTimeUpdate}
         onEnded={onEnded}
-        onError={onError}
+        onError={() => {
+          setIsBuffering(false);
+          if (onError) onError();
+        }}
         onLoadedMetadata={handleLoadedMetadata}
+        onWaiting={() => setIsBuffering(true)}
+        onPlaying={() => setIsBuffering(false)}
+        onCanPlay={() => setIsBuffering(false)}
+        onPause={() => setIsBuffering(false)}
         aria-label="Video player"
       >
         <track kind="captions" srcLang="en" label="English" />

@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdminStats } from "@/hooks/useAdminStats";
 import { useRealtime } from "@/hooks/useRealtime";
-import { Activity, Users, Video, DollarSign, Server, AlertTriangle } from "lucide-react";
+import { Activity, Users, Video, AlertTriangle } from "lucide-react";
 import { 
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, BarChart, Bar, CartesianGrid 
@@ -45,45 +45,41 @@ export default function AdminDashboardPage() {
             <Users className="h-4 w-4 text-emerald-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalUsers}</div>
-            <p className="text-xs text-foreground-dim mt-1">
-              {stats.activeUsersToday} active today
-            </p>
+            <div className="text-2xl font-bold">{stats?.total_users || 0}</div>
+            <p className="text-xs text-foreground-dim mt-1">Overall accounts created</p>
           </CardContent>
         </Card>
         
         <Card className="bg-surface/40 border-white/5 backdrop-blur-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-foreground-muted">Revenue Today</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-400" />
+            <CardTitle className="text-sm font-medium text-foreground-muted">Active Today</CardTitle>
+            <Activity className="h-4 w-4 text-blue-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">BDT {stats.revenueToday}</div>
-            <p className="text-xs text-foreground-dim mt-1">+12% from yesterday</p>
+            <div className="text-2xl font-bold">{stats?.active_users_today || 0}</div>
+            <p className="text-xs text-foreground-dim mt-1">Based on recent activity</p>
           </CardContent>
         </Card>
 
         <Card className="bg-surface/40 border-white/5 backdrop-blur-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-foreground-muted">Total Videos</CardTitle>
+            <CardTitle className="text-sm font-medium text-foreground-muted">Videos Watched Today</CardTitle>
             <Video className="h-4 w-4 text-purple-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalVideos}</div>
-            <p className="text-xs text-foreground-dim mt-1">1.2 TB storage used</p>
+            <div className="text-2xl font-bold">{stats?.videos_watched_today || 0}</div>
+            <p className="text-xs text-foreground-dim mt-1">Unique views logged</p>
           </CardContent>
         </Card>
 
         <Card className="bg-surface/40 border-white/5 backdrop-blur-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-foreground-muted">System Health</CardTitle>
-            <Server className="h-4 w-4 text-indigo-400" />
+            <CardTitle className="text-sm font-medium text-foreground-muted">Errors Today</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold text-emerald-400">All Systems Normal</div>
-            <p className="text-xs text-foreground-dim mt-1">
-              Telegram {stats.telegramHealth.okChannels}/{stats.telegramHealth.totalChannels} OK
-            </p>
+            <div className="text-2xl font-bold">{stats?.errors_today || 0}</div>
+            <p className="text-xs text-foreground-dim mt-1">Errors tracked by Audit logs</p>
           </CardContent>
         </Card>
       </div>

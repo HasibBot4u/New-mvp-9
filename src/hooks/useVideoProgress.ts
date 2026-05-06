@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '../contexts/AuthContext';
+import { queueProgressUpdate } from './useBatchProgress';
 
 export function useVideoProgress(videoId: string, duration: number) {
   const { user } = useAuth();
@@ -51,17 +52,15 @@ export function useVideoProgress(videoId: string, duration: number) {
       const progressPercent = Math.round((currentTime / currentDuration) * 100);
       const completed = (currentTime / currentDuration) >= 0.95;
       
-      const { error } = await supabase.from('watch_history').upsert({
-        user_id: user.id,
-        video_id: videoId,
-        progress_percent: progressPercent,
-        progress_seconds: Math.floor(currentTime),
-        completed: completed,
-        watched_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'user_id,video_id' });
+      queueProgressUpdate({
+        userId: user.id,
+        videoId,
+        progressSeconds: Math.floor(currentTime),
+        progressPercent,
+        completed
+      });
       
-      if (!error && !hasIncrementedRef.current && currentTime > 0) {
+      if (!hasIncrementedRef.current && currentTime > 0) {
         hasIncrementedRef.current = true;
         try {
           await (supabase as any).rpc('increment_watch_count', {
@@ -77,7 +76,7 @@ export function useVideoProgress(videoId: string, duration: number) {
         setIsCompleted(true);
       }
     } catch (e) {
-      console.error('Error saving progress:', e);
+      console.error('Error queuing progress:', e);
     }
   }, [user, videoId, isCompleted]);
 

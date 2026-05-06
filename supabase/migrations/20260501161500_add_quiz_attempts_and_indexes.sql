@@ -1,3 +1,5 @@
+DROP FUNCTION IF EXISTS get_admin_stats() CASCADE;
+
 CREATE OR REPLACE FUNCTION get_admin_stats() RETURNS json SECURITY DEFINER AS $$
 SELECT json_build_object(
   'total_users', (SELECT COUNT(*) FROM profiles),
@@ -5,6 +7,8 @@ SELECT json_build_object(
   'total_subjects', (SELECT COUNT(*) FROM subjects WHERE is_active=true),
   'total_chapters', (SELECT COUNT(*) FROM chapters WHERE is_active=true),
   'active_users_today', (SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE created_at > now()-interval '1 day'),
+  'videos_watched_today', (SELECT COUNT(*) FROM watch_history WHERE updated_at > now()-interval '1 day'),
+  'errors_today', (SELECT COUNT(*) FROM audit_logs WHERE action ILIKE '%error%' AND created_at > now()-interval '1 day'),
   'new_signups_this_week', (SELECT COUNT(*) FROM profiles WHERE created_at > now()-interval '7 days'),
   'total_watch_seconds', (SELECT COALESCE(SUM(progress_seconds),0) FROM watch_history),
   'enrollment_codes_used', (SELECT COALESCE(SUM(uses_count),0) FROM enrollment_codes)

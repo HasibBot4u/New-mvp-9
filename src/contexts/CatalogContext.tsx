@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Subject, Cycle, Chapter, Video } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCatalogStore } from "@/store/catalogStore";
 
 export interface CatalogChapter extends Chapter { videos: Video[]; }
 export interface CatalogCycle extends Cycle { chapters: CatalogChapter[]; }
@@ -49,6 +50,17 @@ const mapVideo = (r: any): Video => ({
 } as Video);
 
 const fetchCatalog = async () => {
+  if (!navigator.onLine) {
+    const state = useCatalogStore.getState();
+    const age = state.lastFetched ? Date.now() - state.lastFetched : Infinity;
+    if (age < 24 * 60 * 60 * 1000 && state.subjects.length > 0) {
+      // Restore from cache
+      console.log("[Offline] Restoring catalog from cache");
+      return buildCatalog(state.subjects, state.cycles, state.chapters, state.videos);
+    }
+    throw new Error("No network and no recent cache available");
+  }
+
   const [s, c, ch, v] = await Promise.all([
     sb.from("subjects").select("id, name, name_bn, slug, icon, color, display_order, is_active").eq("is_active", true).order("display_order"),
     sb.from("cycles").select("id, subject_id, name, name_bn, display_order, is_active").eq("is_active", true).order("display_order"),
@@ -58,10 +70,22 @@ const fetchCatalog = async () => {
   if (s.error || c.error || ch.error || v.error) {
     throw s.error || c.error || ch.error || v.error;
   }
-  const subjects = (s.data ?? []).map(mapSubject);
-  const cycles = (c.data ?? []).map(mapCycle);
-  const chapters = (ch.data ?? []).map(mapChapter);
-  const videos = (v.data ?? []).map(mapVideo);
+  
+  useCatalogStore.getState().setCatalog({
+    subjects: s.data || [],
+    cycles: c.data || [],
+    chapters: ch.data || [],
+    videos: v.data || []
+  });
+
+  return buildCatalog(s.data, c.data, ch.data, v.data);
+};
+
+function buildCatalog(rawS: any, rawC: any, rawCh: any, rawV: any) {
+  const subjects = (rawS ?? []).map(mapSubject);
+  const cycles = (rawC ?? []).map(mapCycle);
+  const chapters = (rawCh ?? []).map(mapChapter);
+  const videos = (rawV ?? []).map(mapVideo);
 
   const videosByChapter = new Map<string, Video[]>();
   for (const vi of videos) {
@@ -95,7 +119,7 @@ const fetchCatalog = async () => {
   }
 
   return { subjects: built, totalVideos: videos.length, videoMap } as Catalog;
-};
+}
 
 export function CatalogProvider({ children }: { children: ReactNode }) {
   const { isLoading: authLoading } = useAuth();

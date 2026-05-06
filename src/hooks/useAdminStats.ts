@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface AdminStats {
-  totalUsers: number;
-  activeUsersToday: number;
-  totalVideos: number;
+  total_users: number;
+  active_users_today: number;
+  videos_watched_today: number;
+  errors_today: number;
+  total_videos: number;
   revenueToday: number;
   usersOverTime: { date: string; signups: number }[];
   viewsBySubject: { name: string; value: number }[];
@@ -18,22 +21,21 @@ export function useAdminStats() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // In a real implementation this would fetch from a consolidated stats endpoint.
-    // We are mocking this structure based on the prompt requirements.
     const fetchStats = async () => {
       setIsLoading(true);
       try {
-        // Mock data logic. In reality, we'd query Supabase tables:
-        // const { count: totalUsers } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-        // const { count: totalVideos } = await supabase.from('videos').select('*', { count: 'exact', head: true });
-        
-        await new Promise(r => setTimeout(r, 600)); // fake delay
+        const { data } = await supabase.rpc('get_admin_stats');
+        const dbStats = (data as any) || {};
         
         setStats({
-          totalUsers: 1450,
-          activeUsersToday: 342,
-          totalVideos: 430,
-          revenueToday: 12500, // BDT
+          // Maps from get_admin_stats RPC
+          total_users: dbStats?.total_users || 0,
+          active_users_today: dbStats?.active_users_today || 0,
+          videos_watched_today: dbStats?.videos_watched_today || 0,
+          errors_today: dbStats?.errors_today || 0,
+          total_videos: dbStats?.total_videos || 0,
+          
+          revenueToday: 0, // Mocked for now until payment tracking is added
           usersOverTime: [
             { date: "May 1", signups: 10 },
             { date: "May 2", signups: 25 },

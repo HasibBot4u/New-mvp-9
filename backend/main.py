@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger('NexusEdu')
 
 import sys
+import psutil
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
 from collections import OrderedDict
@@ -97,12 +98,12 @@ except ValueError:
     sys.exit(1)
 
 CHUNK_SIZE      = 1024 * 1024        # 1 MB per chunk from Telegram
-CATALOG_TTL     = 300                # 5 min cache
+CATALOG_TTL     = 600                # 10 min cache
 INITIAL_BUFFER  = 512 * 1024         # 512 KB first response — starts playing fast
 
 # ─── STATE ────────────────────────────────────────────────────
 class LRUDict:
-    def __init__(self, max_size: int = 300, ttl_seconds: int = 3600):
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 3600):
         self.max_size = max_size
         self.ttl = ttl_seconds
         self._store: OrderedDict = OrderedDict()
@@ -146,7 +147,7 @@ _tg_check_ts: float = 0.0
 _tg_check_ok: bool = False
 catalog_cache   = {"data": None, "timestamp": 0}
 video_map       = {}          # uuid → {channel_id, message_id}
-message_cache: LRUDict = LRUDict(max_size=300, ttl_seconds=3600)
+message_cache: LRUDict = LRUDict(max_size=100, ttl_seconds=3600)
 resolved_channels = set()
 catalog_lock = asyncio.Lock()
 
@@ -619,19 +620,26 @@ async def lifespan(app: FastAPI):
 
     async def catalog_refresher():
         while True:
-            await asyncio.sleep(600)  # 10 minutes (was 4 minutes)
+            await asyncio.sleep(600)  # 10 minutes
             try:
+                message_cache._store.clear()
                 await refresh_catalog()
             except Exception as e:
                 logger.info(f"[NexusEdu] Background catalog refresh failed: {e}")
 
     async def memory_monitor():
-        import psutil
         process = psutil.Process()
         while True:
             await asyncio.sleep(300) # every 5 minutes
             memory_info = process.memory_info()
-            logger.info(f"Memory Usage: {memory_info.rss / 1024 / 1024:.2f} MB")
+            rss_mb = memory_info.rss / 1024 / 1024
+            logger.info(f"Memory Usage: {rss_mb:.2f} MB")
+            if rss_mb > 400:
+                logger.warning("Memory > 400MB. Clearing message_cache and video_map to save memory.")
+                message_cache._store.clear()
+                video_map.clear()
+                import gc
+                gc.collect()
     
     asyncio.create_task(catalog_refresher())
     asyncio.create_task(memory_monitor())
@@ -810,6 +818,9 @@ async def get_thumbnail(video_id: str, request: Request):
         thumb_msg_id = info.get("thumbnail_message_id", 0)
         thumb_channel_str = os.environ.get("THUMBNAIL_CHANNEL_ID")
         
+        if thumb_channel_str and not thumb_channel_str.startswith("-100"):
+            logger.warning(f"THUMBNAIL_CHANNEL_ID {thumb_channel_str} might be a user ID instead of a channel ID. Private channels should start with -100.")
+        
         if thumb_msg_id and thumb_channel_str:
             try:
                 thumb_channel_id = int(thumb_channel_str)
@@ -950,11 +961,17 @@ async def catalog(request: Request, authorization: str = Header(None)):
         data = catalog_cache["data"]
         ts = catalog_cache["timestamp"]
         
+    client = get_active_client()
     if data is None or now - ts > CATALOG_TTL:
-        await refresh_catalog()
-        async with catalog_lock:
-            data = catalog_cache["data"]
-            
+        if client is not None or data is None:
+            await refresh_catalog()
+            async with catalog_lock:
+                data = catalog_cache["data"]
+                
+    if client is None and data is None:
+        # Graceful degradation if Telegram disconnected and cache empty
+        return {"subjects": [], "total_videos": 0, "status": "loading"}
+        
     # We already removed channel_id and message_id from the JSON returned in refresh_catalog
     return data or {"subjects": [], "total_videos": 0}
 

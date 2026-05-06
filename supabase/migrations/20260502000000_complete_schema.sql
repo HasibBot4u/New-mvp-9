@@ -1,5 +1,18 @@
 -- Complete schema generated for NexusEdu
 
+-- DROP existing functions first to avoid return type change conflicts
+DROP FUNCTION IF EXISTS check_chapter_access(UUID, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS use_chapter_enrollment_code(UUID, TEXT, UUID) CASCADE;
+DROP FUNCTION IF EXISTS redeem_enrollment_code(TEXT) CASCADE;
+DROP FUNCTION IF EXISTS increment_watch_count(UUID, UUID) CASCADE;
+DROP FUNCTION IF EXISTS admin_generate_chapter_code(UUID, INTEGER, INTEGER, INTEGER, BOOLEAN, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS admin_toggle_enrollment_code(UUID, BOOLEAN) CASCADE;
+DROP FUNCTION IF EXISTS admin_block_chapter_access(UUID, UUID, BOOLEAN, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS delete_user_account(UUID) CASCADE;
+DROP FUNCTION IF EXISTS has_role(UUID, app_role) CASCADE;
+DROP FUNCTION IF EXISTS is_admin(UUID) CASCADE;
+DROP FUNCTION IF EXISTS get_admin_stats() CASCADE;
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Enum

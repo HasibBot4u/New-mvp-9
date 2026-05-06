@@ -13,8 +13,13 @@ CREATE TABLE IF NOT EXISTS pending_enrollments (
 
 -- RLS
 ALTER TABLE pending_enrollments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage own enrollments" ON pending_enrollments;
 CREATE POLICY "Users can manage own enrollments" ON pending_enrollments FOR ALL USING (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Admins have full access to enrollments" ON pending_enrollments;
 CREATE POLICY "Admins have full access to enrollments" ON pending_enrollments USING (is_admin());
+
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_pending_enrollments_user_id ON pending_enrollments(user_id);

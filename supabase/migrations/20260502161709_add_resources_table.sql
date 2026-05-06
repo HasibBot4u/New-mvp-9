@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS resources (
 
 -- RLS
 ALTER TABLE resources ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admins have full access" ON resources;
 CREATE POLICY "Admins have full access" ON resources USING (is_admin());
+DROP POLICY IF EXISTS "Anyone can read active resources" ON resources;
 CREATE POLICY "Anyone can read active resources" ON resources FOR SELECT USING (is_active = true);
 
 -- Add Index

@@ -1,4 +1,7 @@
 -- Create audit_logs table
+DROP FUNCTION IF EXISTS admin_generate_chapter_code(UUID, INTEGER, TEXT, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS delete_user_account(UUID, TEXT) CASCADE;
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     action TEXT NOT NULL,

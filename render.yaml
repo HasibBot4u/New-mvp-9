@@ -1,14 +1,12 @@
 services:
   - type: web
     name: nexusedu-backend
-    env: python
+    env: docker
     region: singapore
     plan: free
-    buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && python main.py"
+    rootDir: backend
+    dockerFilePath: Dockerfile
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.11
       - key: TELEGRAM_API_ID
         sync: false
       - key: TELEGRAM_API_HASH

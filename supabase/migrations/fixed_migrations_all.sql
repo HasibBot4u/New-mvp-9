@@ -1,3 +1,54 @@
+CREATE TABLE IF NOT EXISTS resources (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  chapter_id UUID REFERENCES chapters(id) ON DELETE CASCADE NOT NULL,
+  title TEXT NOT NULL,
+  title_bn TEXT,
+  drive_file_id TEXT,
+  pdf_url TEXT,
+  display_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS
+ALTER TABLE resources ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admins have full access" ON resources;
+CREATE POLICY "Admins have full access" ON resources USING (is_admin());
+DROP POLICY IF EXISTS "Anyone can read active resources" ON resources;
+CREATE POLICY "Anyone can read active resources" ON resources FOR SELECT USING (is_active = true);
+
+-- Add Index
+CREATE INDEX IF NOT EXISTS idx_resources_chapter_id ON resources(chapter_id);
+
+
+CREATE TABLE IF NOT EXISTS pending_enrollments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  chapter_id UUID REFERENCES chapters(id) ON DELETE CASCADE,
+  transaction_id TEXT NOT NULL,
+  payment_method TEXT, -- 'bkash', 'nagad', 'rocket'
+  amount NUMERIC,
+  status TEXT DEFAULT 'pending', -- pending, approved, rejected
+  admin_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS
+ALTER TABLE pending_enrollments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage own enrollments" ON pending_enrollments;
+CREATE POLICY "Users can manage own enrollments" ON pending_enrollments FOR ALL USING (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Admins have full access to enrollments" ON pending_enrollments;
+CREATE POLICY "Admins have full access to enrollments" ON pending_enrollments USING (is_admin());
+
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_pending_enrollments_user_id ON pending_enrollments(user_id);
+CREATE INDEX IF NOT EXISTS idx_pending_enrollments_status ON pending_enrollments(status);
+
+
 -- PART A — MISSING INDEXES
 DROP FUNCTION IF EXISTS is_admin() CASCADE;
 CREATE INDEX IF NOT EXISTS idx_videos_source_type ON videos(source_type);
@@ -194,3 +245,77 @@ ALTER TABLE cycles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE chapters ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE notes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+
+-- Upload Pipeline Migrations
+
+CREATE TABLE IF NOT EXISTS upload_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    telegram_message_id BIGINT NOT NULL,
+    telegram_file_id TEXT NOT NULL,
+    telegram_channel_id BIGINT NOT NULL,
+    file_name TEXT,
+    file_size BIGINT,
+    mime_type TEXT,
+    duration INT,
+    width INT,
+    height INT,
+    thumbnail_file_id TEXT,
+    status TEXT DEFAULT 'pending', -- pending, processing, completed, failed
+    error_message TEXT,
+    retry_count INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS video_variants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    variant_name TEXT NOT NULL, -- e.g., '360p', '720p', '1080p'
+    width INT,
+    height INT,
+    bitrate INT,
+    telegram_file_id TEXT NOT NULL,
+    telegram_message_id BIGINT,
+    telegram_channel_id BIGINT,
+    file_size BIGINT,
+    md5_checksum TEXT,
+    sha256_checksum TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- RLS for upload_queue
+ALTER TABLE upload_queue ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admins have full access" ON upload_queue;
+CREATE POLICY "Admins have full access" ON upload_queue USING (is_admin());
+
+-- RLS for video_variants
+ALTER TABLE video_variants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can read video variants" ON video_variants;
+CREATE POLICY "Anyone can read video variants" ON video_variants FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admins have full access" ON video_variants;
+CREATE POLICY "Admins have full access" ON video_variants USING (is_admin());
+
+
+-- Add thumbnail_telegram_message_id to videos table
+DO $$ 
+BEGIN 
+  ALTER TABLE videos ADD COLUMN IF NOT EXISTS thumbnail_telegram_message_id BIGINT;
+EXCEPTION 
+  WHEN OTHERS THEN 
+    NULL; 
+END $$;
+
+
+-- Database Optimization: Indexes and cleanup
+
+-- 1. Create index on upload_queue(status) to speed up polling
+CREATE INDEX IF NOT EXISTS idx_upload_queue_status ON public.upload_queue(status);
+
+-- 2. Create index on videos(chapter_id) to speed up catalog queries
+CREATE INDEX IF NOT EXISTS idx_videos_chapter_id ON public.videos(chapter_id);
+
+-- 3. Run Vacuum to reclaim space (Note: VACUUM cannot be run inside a transaction block)
+-- Ensure this is run manually if necessary, or handled by Supabase autovacuum
+-- VACUUM ANALYZE public.upload_queue;
+-- VACUUM ANALYZE public.videos;

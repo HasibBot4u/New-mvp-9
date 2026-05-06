@@ -12,11 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Deploy to Heroku
-        uses: akhileshns/heroku-deploy@v3.12.14
-        with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "nexusedu-api"
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
-          usedocker: true
-          appdir: "backend"
+      - name: Trigger Render Deploy
+        run: |
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK }}" ]; then
+            curl "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          else
+            echo "RENDER_DEPLOY_HOOK secret not set. Skipping explicitly trigger and assuming Render auto-deployment via GitHub integration."
+          fi

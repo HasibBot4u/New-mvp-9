@@ -20,6 +20,7 @@ interface CatalogState {
   cycles: any[];
   chapters: any[];
   videos: any[];
+  lastFetched: number | null;
   setCatalog: (data: any) => void;
   isLoading: boolean;
   setLoading: (loading: boolean) => void;
@@ -32,9 +33,10 @@ export const useCatalogStore = create<CatalogState>()(
       cycles: [],
       chapters: [],
       videos: [],
+      lastFetched: null,
       isLoading: false,
       setLoading: (isLoading) => set({ isLoading }),
-      setCatalog: (data) => set({ ...data }),
+      setCatalog: (data) => set({ ...data, lastFetched: Date.now() }),
     }),
     {
       name: 'catalog-storage',

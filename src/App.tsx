@@ -1,9 +1,11 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuthStore } from "@/store/authStore";
 
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CatalogProvider } from "@/contexts/CatalogContext";
@@ -18,6 +20,33 @@ import { PageLoader } from "@/components/ui/PageLoader";
 import { SkipLink } from "@/components/a11y/SkipLink";
 import { LiveRegion } from "@/components/a11y/LiveRegion";
 import { RouteAnalytics } from "@/components/seo/RouteAnalytics";
+
+function AuthManager() {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        useAuthStore.getState().setUser(session.user);
+        useAuthStore.getState().setSession(session);
+        // Fetch role from profiles table if needed
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          useAuthStore.getState().setUser(session.user);
+          useAuthStore.getState().setSession(session);
+        } else {
+          useAuthStore.getState().logout();
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return null;
+}
 
 const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -76,6 +105,7 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
+          <AuthManager />
           <BrowserRouter>
             <RouteAnalytics />
             <SkipLink />

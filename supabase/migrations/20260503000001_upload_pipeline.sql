@@ -37,9 +37,12 @@ CREATE TABLE IF NOT EXISTS video_variants (
 
 -- RLS for upload_queue
 ALTER TABLE upload_queue ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admins have full access" ON upload_queue;
 CREATE POLICY "Admins have full access" ON upload_queue USING (is_admin());
 
 -- RLS for video_variants
 ALTER TABLE video_variants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can read video variants" ON video_variants;
 CREATE POLICY "Anyone can read video variants" ON video_variants FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admins have full access" ON video_variants;
 CREATE POLICY "Admins have full access" ON video_variants USING (is_admin());

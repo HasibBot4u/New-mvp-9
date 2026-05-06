@@ -1,3 +1,5 @@
+BEGIN;
+
 -- Upload Pipeline Migrations
 
 CREATE TABLE IF NOT EXISTS upload_queue (
@@ -37,12 +39,32 @@ CREATE TABLE IF NOT EXISTS video_variants (
 
 -- RLS for upload_queue
 ALTER TABLE upload_queue ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Admins have full access" ON upload_queue;
-CREATE POLICY "Admins have full access" ON upload_queue USING (is_admin());
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Admins have full access" ON upload_queue;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Admins have full access" ON upload_queue USING (is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- RLS for video_variants
 ALTER TABLE video_variants ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Anyone can read video variants" ON video_variants;
-CREATE POLICY "Anyone can read video variants" ON video_variants FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Admins have full access" ON video_variants;
-CREATE POLICY "Admins have full access" ON video_variants USING (is_admin());
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Anyone can read video variants" ON video_variants;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Anyone can read video variants" ON video_variants FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Admins have full access on variants" ON video_variants;
+    -- dropping any potentially colliding name to be safe
+    DROP POLICY IF EXISTS "Admins have full access" ON video_variants;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Admins have full access on variants" ON video_variants USING (is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+COMMIT;

@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS pending_enrollments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
@@ -14,13 +16,25 @@ CREATE TABLE IF NOT EXISTS pending_enrollments (
 -- RLS
 ALTER TABLE pending_enrollments ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Users can manage own enrollments" ON pending_enrollments;
-CREATE POLICY "Users can manage own enrollments" ON pending_enrollments FOR ALL USING (user_id = auth.uid());
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can manage own enrollments" ON pending_enrollments;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
-DROP POLICY IF EXISTS "Admins have full access to enrollments" ON pending_enrollments;
-CREATE POLICY "Admins have full access to enrollments" ON pending_enrollments USING (is_admin());
+DO $$ BEGIN
+    CREATE POLICY "Users can manage own enrollments" ON pending_enrollments FOR ALL USING (user_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Admins have full access to enrollments" ON pending_enrollments;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Admins have full access to enrollments" ON pending_enrollments USING (is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_pending_enrollments_user_id ON pending_enrollments(user_id);
 CREATE INDEX IF NOT EXISTS idx_pending_enrollments_status ON pending_enrollments(status);
+
+COMMIT;

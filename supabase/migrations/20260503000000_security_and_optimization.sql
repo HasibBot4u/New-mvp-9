@@ -1,3 +1,5 @@
+BEGIN;
+
 -- PART A — MISSING INDEXES
 DROP FUNCTION IF EXISTS is_admin() CASCADE;
 CREATE INDEX IF NOT EXISTS idx_videos_source_type ON videos(source_type);
@@ -6,10 +8,6 @@ CREATE INDEX IF NOT EXISTS idx_videos_is_active_display_order ON videos(is_activ
 
 CREATE INDEX IF NOT EXISTS idx_profiles_is_blocked ON profiles(is_blocked) WHERE is_blocked = true;
 CREATE INDEX IF NOT EXISTS idx_profiles_last_active_at ON profiles(last_active_at DESC);
-
--- Assuming enrollment_codes table might exist, creating indexes if it does. Creating empty tables if needed first.
--- Wait, let's just create the indexes directly, wrapping in DO block if we want to be safe, but supabase migrations usually just fail if table doesn't exist, which implies we should make sure tables exist or we just execute the provided snippet.
--- Given the context, we'll apply exactly what the user asked.
 
 CREATE INDEX IF NOT EXISTS idx_enrollment_codes_expires_at ON enrollment_codes(expires_at) WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_enrollment_codes_chapter_active ON enrollment_codes(chapter_id, is_active);
@@ -29,16 +27,15 @@ CREATE INDEX IF NOT EXISTS idx_chapters_name_trgm ON chapters USING gin(name gin
 
 -- PART B — DATABASE CONSTRAINTS
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_source_type;
-UPDATE videos SET source_type = 'telegram' WHERE source_type NOT IN ('telegram', 'drive', 'youtube', 'local') OR source_type IS NULL;
 ALTER TABLE videos ADD CONSTRAINT chk_source_type 
   CHECK (source_type IN ('telegram', 'drive', 'youtube', 'local'));
 
-UPDATE videos SET duration = '00:00:00' WHERE duration IS NULL;
+-- Clean up invalid duration data BEFORE applying constraint
+UPDATE videos SET duration = '00:00:00' WHERE duration !~ '^([0-9]{2}):([0-9]{2}):([0-9]{2})$' OR duration IS NULL;
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_duration_format;
--- Made constraint less strict to allow things like 12:34 or 1:23:45
 ALTER TABLE videos ADD CONSTRAINT chk_duration_format 
-  CHECK (duration IS NULL OR duration ~ '^[0-9:]+$');
+  CHECK (duration ~ '^([0-9]{2}):([0-9]{2}):([0-9]{2})$');
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_size_positive;
 ALTER TABLE videos ADD CONSTRAINT chk_size_positive 
@@ -46,7 +43,7 @@ ALTER TABLE videos ADD CONSTRAINT chk_size_positive
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_display_order;
 ALTER TABLE videos ADD CONSTRAINT chk_display_order 
-  CHECK (display_order IS NULL OR display_order >= 0);
+  CHECK (display_order >= 0);
 
 
 -- PART C — NEW TABLES
@@ -196,3 +193,5 @@ ALTER TABLE cycles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE chapters ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE notes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+COMMIT;

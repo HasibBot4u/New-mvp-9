@@ -817,7 +817,10 @@ def get_active_client() -> Optional[Client]:
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    return {"service": "NexusEdu Backend", "version": "v1.2.0", "status": "running"}
+    try:
+        return {"service": "NexusEdu Backend", "version": "v1.2.0", "status": "running"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 import io
@@ -889,7 +892,10 @@ async def get_thumbnail(video_id: str, request: Request):
 
 @app.api_route("/api/ping", methods=["GET", "HEAD"])
 async def ping(request: Request):
-    return JSONResponse({"status": "ok", "time": time.time()})
+    try:
+        return JSONResponse({"status": "ok", "time": time.time()})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.post("/api/bot_webhook")
@@ -938,8 +944,9 @@ async def health(request: Request):
 
     # Check bot status
     bot_status = "running"
-    if not bot_manager.is_running:
-        if not bot_manager.config.TOKEN:
+    is_bot_init = getattr(bot_manager, "_initialized", False)
+    if not is_bot_init:
+        if not getattr(bot_manager.config, "TOKEN", None):
             bot_status = "not_configured"
         else:
             bot_status = "stopped"

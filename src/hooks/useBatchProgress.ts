@@ -1,58 +1,85 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface ProgressUpdate {
-  userId: string;
-  videoId: string;
-  progressSeconds: number;
-  progressPercent: number;
-  completed: boolean;
+  video_id: string;
+  progress: number;
+  duration: number;
 }
 
-const pending = new Map<string, ProgressUpdate>();
-let flushTimer: any = null;
+export function useBatchProgress() {
+  const pendingUpdates = useRef<Map<string, { progress: number, duration: number, timestamp: number }>>(new Map());
+  const [pendingCount, setPendingCount] = useState(0);
 
-export function queueProgressUpdate(update: ProgressUpdate) {
-  pending.set(update.videoId, update);
-  
-  if (!flushTimer) {
-    flushTimer = setTimeout(flushProgressUpdates, 10000);
-  }
-}
+  const flush = useCallback(async () => {
+    if (pendingUpdates.current.size === 0) return;
 
-async function flushProgressUpdates() {
-  if (pending.size === 0) return;
-  
-  const updatesArray = Array.from(pending.values()).map(up => ({
-    user_id: up.userId,
-    video_id: up.videoId,
-    progress_seconds: up.progressSeconds,
-    progress_percent: up.progressPercent,
-    completed: up.completed,
-    watched_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }));
-  
-  pending.clear();
-  flushTimer = null;
-  
-  try {
-    const { error } = await supabase.from('watch_history').upsert(updatesArray, {
-      onConflict: 'user_id,video_id'
-    });
-    if (error) console.error("Batch progress upsert error:", error);
-  } catch (err) {
-    console.error("Batch progress error:", err);
-  }
-}
+    const updates: ProgressUpdate[] = Array.from(pendingUpdates.current.entries()).map(([video_id, data]) => ({
+      video_id,
+      progress: data.progress,
+      duration: data.duration
+    }));
 
-// Handle beforeunload to flush immediately
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => {
-    if (pending.size > 0) {
-      // In beforeunload, fetch with keepalive is better if using raw requests,
-      // but Supabase synchronous code might not finish. 
-      // We will attempt it anyway.
-      flushProgressUpdates();
-    }
-  });
+    // Clear now to accumulate new ones during the API call
+    pendingUpdates.current.clear();
+    setPendingCount(0);
+
+    toast('Saving progress...', { id: 'progress-save', duration: 1000 });
+
+    const sendBatch = async (retry: boolean) => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+        const res = await fetch(`${API_BASE}/api/progress/batch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ updates }),
+          keepalive: true
+        });
+
+        if (!res.ok) {
+          throw new Error(`API error: ${res.status}`);
+        }
+      } catch (err) {
+        if (retry) {
+          setTimeout(() => sendBatch(false), 2000);
+        } else {
+          console.error('Failed to save progress batch after retry:', err);
+        }
+      }
+    };
+
+    sendBatch(true);
+  }, []);
+
+  const updateProgress = useCallback((videoId: string, progress: number, duration: number) => {
+    pendingUpdates.current.set(videoId, { progress, duration, timestamp: Date.now() });
+    setPendingCount(pendingUpdates.current.size);
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      flush();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    const interval = setInterval(() => {
+      flush();
+    }, 10000);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      clearInterval(interval);
+      flush();
+    };
+  }, [flush]);
+
+  return { updateProgress, flush, pendingCount };
 }

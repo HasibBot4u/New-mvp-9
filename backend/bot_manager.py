@@ -84,6 +84,7 @@ class BotManager:
         self._initialized = False
         self._webhook_set = False
         self._startup_message_sent = False
+        self._scan_running = False
 
     # ── Lifecycle Methods ────────────────────────────────────────────────────
 
@@ -196,6 +197,7 @@ class BotManager:
             CommandHandler("stats", self.cmd_stats),
             CommandHandler("notify", self.cmd_notify),
             CommandHandler("scan", self.cmd_scan),
+            CommandHandler("scan_cancel", self.cmd_scan_cancel),
         ]
 
         for handler in handlers:
@@ -227,7 +229,8 @@ class BotManager:
                     f"/status - System status\n"
                     f"/stats - Platform statistics\n"
                     f"/notify - Broadcast message\n"
-                    f"/scan - Scan channels"
+                    f"/scan - Scan channels\n"
+                    f"/scan_cancel - Cancel active scan"
                 )
 
             await update.message.reply_html(welcome_text)
@@ -248,7 +251,8 @@ class BotManager:
             "/status - System status\n"
             "/stats - Platform statistics\n"
             "/notify - Broadcast notification\n"
-            "/scan - Scan channels"
+            "/scan - Scan channels\n"
+            "/scan_cancel - Cancel active scan"
         )
         await update.message.reply_html(help_text)
 
@@ -320,6 +324,37 @@ class BotManager:
         await update.message.reply_text(f"📢 Notification sent: {message}")
         # TODO: Implement actual broadcast logic
 
+    async def cmd_scan_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /scan_cancel command - ADMIN ONLY"""
+        if not self.config.is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Admin only.")
+            return
+            
+        if not self._scan_running:
+            await update.message.reply_text("ℹ️ No scan is currently running.")
+            return
+            
+        self._scan_running = False
+        await update.message.reply_text("🛑 Scan cancellation requested. It will stop shortly.")
+
+    async def _send_long_html_message(self, message, text: str) -> None:
+        """Helper to send long messages splitting at 4000 chars to avoid limits."""
+        parts = []
+        while len(text) > 4000:
+            # Find a safe break point (newline)
+            break_idx = text.rfind('\n', 0, 4000)
+            if break_idx == -1:
+                break_idx = 4000
+            parts.append(text[:break_idx])
+            text = text[break_idx:]
+        parts.append(text)
+        
+        for idx, part in enumerate(parts):
+            if idx == 0:
+                await message.edit_text(part, parse_mode='HTML')
+            else:
+                await message.reply_html(part)
+
     async def cmd_scan(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /scan command - ADMIN ONLY"""
         if not self.config.is_admin(update.effective_user.id):
@@ -327,103 +362,154 @@ class BotManager:
             return
 
         import os
-        import httpx
         import time
+        import html
         from backend.main import get_active_client
-        import asyncio
+
+        if self._scan_running:
+            await update.message.reply_text("⚠️ A scan is already running. Use /scan_cancel to stop it.")
+            return
 
         client = get_active_client()
         if not client:
-            await update.message.reply_text("❌ No active Pyrogram client.")
+            await update.message.reply_text("❌ No active Pyrogram client. Ensure your session is valid.")
             return
 
-        status_msg = await update.message.reply_text("🔍 Starting scan...")
+        status_msg = await update.message.reply_text("🔍 <b>Initializing channel scan...</b>", parse_mode='HTML')
 
         channels_to_scan = []
         for key, val in os.environ.items():
             if key.endswith("_CHANNEL_ID"):
                 try:
-                    cid = int(val)
+                    cid = int(val.strip())
                     if cid != 0 and cid not in channels_to_scan:
-                        channels_to_scan.append(cid)
+                        channels_to_scan.append((key, cid))
                 except ValueError:
                     pass
 
         if not channels_to_scan:
-            await status_msg.edit_text("❌ No channels configured.")
+            await status_msg.edit_text("❌ <b>No channels configured.</b>\nEnsure environment variables end with <code>_CHANNEL_ID</code>.", parse_mode='HTML')
             return
 
-        total_found = 0
-        errors = 0
+        self._scan_running = True
+        
+        total_scanned = 0
+        total_videos = 0
+        total_documents = 0
+        total_errors = 0
         per_channel = {}
         
         last_update = time.time()
         
-        for cid in channels_to_scan:
-            per_channel[cid] = 0
-            try:
-                # Ensure we can access the chat
-                await client.get_chat(cid)
+        try:
+            for env_key, cid in channels_to_scan:
+                if not self._scan_running:
+                    break
+                    
+                per_channel[env_key] = {"cid": cid, "videos": 0, "documents": 0, "total": 0, "error": None}
                 
-                async for msg in client.get_chat_history(cid):
-                    try:
+                try:
+                    # Optional: Verify channel access
+                    # await client.get_chat(cid)
+                    
+                    async for msg in client.get_chat_history(cid, limit=100):
+                        if not self._scan_running:
+                            break
+                            
+                        # Media detection
                         media = msg.video or msg.document
-                        if not media:
-                            continue
+                        if media:
+                            mime = getattr(media, 'mime_type', '').lower()
+                            file_name = getattr(media, 'file_name', '').lower()
                             
-                        # Extract info
-                        size = media.file_size or 0
-                        mime = getattr(media, 'mime_type', 'video/mp4') or 'video/mp4'
-                        file_name = getattr(media, 'file_name', '') or ''
-                        
-                        # Only video and likely documents
-                        if not mime.startswith('video/') and not file_name.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.webm')):
-                            continue
+                            is_video = msg.video is not None or mime.startswith('video/') or file_name.endswith(('.mp4', '.mkv', '.avi', '.mov', '.webm'))
                             
-                        # Add to supabase
-                        if self.config.SUPABASE_URL and self.config.SUPABASE_SERVICE_KEY:
-                            data = {
-                                "title": file_name if file_name else f"Video {msg.id}",
-                                "source_type": "telegram",
-                                "telegram_channel_id": str(cid),
-                                "telegram_message_id": msg.id,
-                                "size_mb": round(size / (1024 * 1024), 2) if size else 0,
-                                "is_active": False # Don't activate automatically
-                            }
-                            async with httpx.AsyncClient(timeout=10.0) as hclient:
-                                await hclient.post(
-                                    f"{self.config.SUPABASE_URL}/rest/v1/videos",
-                                    headers={
-                                        "apikey": self.config.SUPABASE_SERVICE_KEY,
-                                        "Authorization": f"Bearer {self.config.SUPABASE_SERVICE_KEY}",
-                                        "Content-Type": "application/json",
-                                        "Prefer": "return=minimal"
-                                    },
-                                    json=data
-                                )
+                            if is_video:
+                                per_channel[env_key]["videos"] += 1
+                                per_channel[env_key]["total"] += 1
+                                total_videos += 1
                                 
-                        total_found += 1
-                        per_channel[cid] += 1
-                        
+                                # Add to supabase (videos only)
+                                if getattr(self.config, 'SUPABASE_URL', None) and getattr(self.config, 'SUPABASE_SERVICE_KEY', None):
+                                    import httpx
+                                    size = getattr(media, 'file_size', 0) or 0
+                                    try:
+                                        data = {
+                                            "title": file_name if file_name else f"Video {msg.id}",
+                                            "source_type": "telegram",
+                                            "telegram_channel_id": str(cid),
+                                            "telegram_message_id": msg.id,
+                                            "size_mb": round(size / (1024 * 1024), 2) if size else 0,
+                                            "is_active": False
+                                        }
+                                        async with httpx.AsyncClient(timeout=10.0) as hclient:
+                                            await hclient.post(
+                                                f"{self.config.SUPABASE_URL}/rest/v1/videos",
+                                                headers={
+                                                    "apikey": self.config.SUPABASE_SERVICE_KEY,
+                                                    "Authorization": f"Bearer {self.config.SUPABASE_SERVICE_KEY}",
+                                                    "Content-Type": "application/json",
+                                                    "Prefer": "return=minimal"
+                                                },
+                                                json=data
+                                            )
+                                    except Exception as db_e:
+                                        logger.error(f"Error saving to Supabase for {msg.id}: {db_e}")
+                            else:
+                                per_channel[env_key]["documents"] += 1
+                                per_channel[env_key]["total"] += 1
+                                total_documents += 1
+                                
                         # Progress update every 10 seconds
                         if time.time() - last_update > 10:
-                            await status_msg.edit_text(f"⏳ Scanning...\nFound: {total_found}\nErrors: {errors}\nCurrent Channel: {cid}")
+                            current_total = total_videos + total_documents
+                            progress_text = (
+                                f"⏳ <b>Scanning in progress...</b>\n\n"
+                                f"<b>Current Channel:</b> {html.escape(env_key)}\n"
+                                f"<b>Channels Scanned:</b> {total_scanned}/{len(channels_to_scan)}\n"
+                                f"<b>Found So Far:</b> {current_total} items\n"
+                                f"<b>Errors:</b> {total_errors}\n\n"
+                                f"<i>Use /scan_cancel to stop.</i>"
+                            )
+                            await status_msg.edit_text(progress_text, parse_mode='HTML')
                             last_update = time.time()
                             
-                    except Exception as e:
-                        errors += 1
-                        logger.error(f"Error processing message {msg.id} in {cid}: {e}")
-                        
-            except Exception as e:
-                errors += 1
-                logger.error(f"Error scanning channel {cid}: {e}")
+                    total_scanned += 1
+                    
+                except Exception as e:
+                    total_errors += 1
+                    per_channel[env_key]["error"] = str(e)
+                    logger.error(f"Error scanning channel {env_key} ({cid}): {e}")
 
-        # Final report
-        report = f"✅ Scan Complete\nTotal Found: {total_found}\nErrors: {errors}\n\nCounts per channel:\n"
-        for cid, count in per_channel.items():
-            report += f"{cid}: {count}\n"
+        except Exception as e:
+            logger.error(f"Critical error during scan: {e}")
+            await update.message.reply_text(f"❌ <b>Critical error during scan:</b>\n<pre>{html.escape(str(e))}</pre>", parse_mode='HTML')
+        finally:
+            was_cancelled = not self._scan_running
+            self._scan_running = False
+
+            # Build final report
+            total_items = total_videos + total_documents
             
-        await status_msg.edit_text(report)
+            report = (
+                f"{'🛑 <b>Scan Cancelled</b>' if was_cancelled else '✅ <b>Scan Complete</b>'}\n"
+                f"<b>Total Channels Scanned:</b> {total_scanned}/{len(channels_to_scan)}\n"
+                f"<b>Total Items Found:</b> {total_items}\n"
+                f"  • Videos: {total_videos}\n"
+                f"  • Documents: {total_documents}\n"
+                f"<b>Errors Encountered:</b> {total_errors}\n\n"
+                f"<b>Per-Channel Breakdown:</b>\n"
+            )
+            
+            for env_key, stats in per_channel.items():
+                report += f"🔹 <b>{html.escape(env_key)}</b> (<code>{stats['cid']}</code>)\n"
+                if stats.get("error"):
+                    report += f"   ❌ Error: <code>{html.escape(stats['error'])}</code>\n"
+                else:
+                    report += f"   Total: {stats['total']} | V: {stats['videos']} | D: {stats['documents']}\n"
+                report += "\n"
+                
+            await self._send_long_html_message(status_msg, report.strip())
 
     # ── Webhook Processing ─────────────────────────────────────────────────────
 

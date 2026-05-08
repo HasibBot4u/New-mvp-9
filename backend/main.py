@@ -655,23 +655,21 @@ async def lifespan(app: FastAPI):
     # Background tasks
     asyncio.create_task(telegram_watchdog())
 
-    async def catalog_refresher():
-        while True:
-            await asyncio.sleep(600)
-            try:
-                await refresh_catalog()
-            except Exception as e:
-                logger.info(f"[NexusEdu] Background catalog refresh failed: {e}")
+    # Reduced unnecessary background task for free tier
+    # (relying on /api/warmup and active requests to populate cache)
+    # asyncio.create_task(catalog_refresher())
+    
+    import psutil
+    process = psutil.Process()
+    startup_mem = process.memory_info().rss / 1024 / 1024
+    logger.info(f"[NexusEdu] Startup Memory Usage: {startup_mem:.2f} MB")
 
     async def memory_monitor():
-        import psutil
-        process = psutil.Process()
         while True:
             await asyncio.sleep(300)
             memory_info = process.memory_info()
-            logger.info(f"Memory Usage: {memory_info.rss / 1024 / 1024:.2f} MB")
+            logger.info(f"[NexusEdu] Memory Usage: {memory_info.rss / 1024 / 1024:.2f} MB")
 
-    asyncio.create_task(catalog_refresher())
     asyncio.create_task(memory_monitor())
 
     logger.info("[NexusEdu] ===== BACKEND READY =====")
@@ -867,7 +865,8 @@ async def get_thumbnail(video_id: str, request: Request):
                     thumb_bytes = await client.download_media(thumb_msg.photo.file_id, in_memory=True)
                     return StreamingResponse(
                         io.BytesIO(thumb_bytes.getbuffer()),
-                        media_type="image/jpeg"
+                        media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=604800"}
                     )
             except Exception as e:
                 logger.info(f"[NexusEdu] Thumbnail channel fetch error: {e}")
@@ -883,7 +882,8 @@ async def get_thumbnail(video_id: str, request: Request):
         thumb_bytes = await client.download_media(media.thumbs[0].file_id, in_memory=True)
         return StreamingResponse(
             io.BytesIO(thumb_bytes.getbuffer()),
-            media_type="image/jpeg"
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=604800"}
         )
     except Exception as e:
         logger.info(f"[NexusEdu] Thumbnail fetch error: {e}")
@@ -893,7 +893,8 @@ async def get_thumbnail(video_id: str, request: Request):
 @app.api_route("/api/ping", methods=["GET", "HEAD"])
 async def ping(request: Request):
     try:
-        return JSONResponse({"status": "ok", "time": time.time()})
+        from datetime import datetime
+        return JSONResponse({"status": "ok", "timestamp": datetime.utcnow().isoformat() + "Z"})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -931,72 +932,92 @@ async def health(request: Request):
     except HTTPException:
         return JSONResponse({"status": "rate_limited"}, status_code=429)
 
-    is_conn = False
-    try:
-        client = get_active_client()
-        if client is not None:
-            is_conn = True
-    except Exception:
-        pass
+    import time
+    start_time = time.time()
 
-    # Check primary telegram client status
-    tg_status = "connected" if is_conn else ("reconnecting" if tg is not None else "disconnected")
-
-    # Check bot status
-    bot_status = "running"
-    is_bot_init = getattr(bot_manager, "_initialized", False)
-    if not is_bot_init:
-        if not getattr(bot_manager.config, "TOKEN", None):
-            bot_status = "not_configured"
-        else:
-            bot_status = "stopped"
-
-    # Check supabase connection
-    sb_status = "ok"
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
+    # Check Primary Telegram
+    tg_status = "unconfigured"
+    tg_time = 0
+    if HAS_TELEGRAM_CREDS:
+        ts = time.time()
         try:
-            async with httpx.AsyncClient(timeout=2.0) as hclient:
+            client = get_active_client()
+            if client is not None:
+                tg_status = "connected"
+            elif tg is not None:
+                tg_status = "reconnecting"
+            else:
+                tg_status = "disconnected"
+        except Exception:
+            tg_status = "error"
+        tg_time = round((time.time() - ts) * 1000)
+
+    # Check Secondary Telegram
+    tg2_status = "unconfigured"
+    tg2_time = 0
+    if SESSION_STRING_2:
+        ts = time.time()
+        try:
+            tg2_status = "connected" if (tg2 is not None and getattr(tg2, 'is_connected', False)) else "disconnected"
+        except Exception:
+            tg2_status = "error"
+        tg2_time = round((time.time() - ts) * 1000)
+
+    # Check Supabase
+    sb_status = "unconfigured"
+    sb_time = 0
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        ts = time.time()
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as hclient:
                 r = await hclient.get(
                     f"{SUPABASE_URL}/rest/v1/subjects?limit=1",
                     headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"}
                 )
-                if r.status_code != 200:
+                if r.status_code == 200:
+                    sb_status = "connected"
+                else:
                     sb_status = "error"
         except Exception:
             sb_status = "error"
-    else:
-        sb_status = "unconfigured"
+        sb_time = round((time.time() - ts) * 1000)
 
-    # Check secondary telegram client
-    tg2_status = "not_configured"
-    if SESSION_STRING_2:
-        try:
-            tg2_status = "connected" if (tg2 is not None and tg2.is_connected) else "disconnected"
-        except Exception:
-            tg2_status = "disconnected"
+    # Check Bot
+    bot_status = "unconfigured"
+    bot_time = 0
+    ts = time.time()
+    try:
+        if getattr(bot_manager.config, "TOKEN", None):
+            is_bot_init = getattr(bot_manager, "_initialized", False)
+            bot_status = "connected" if is_bot_init else "error"
+    except Exception:
+        bot_status = "error"
+    bot_time = round((time.time() - ts) * 1000)
 
     # Evaluate overall health
-    is_healthy = True
+    critical_errors = 0
     if sb_status == "error":
-        is_healthy = False
-    if tg_status == "disconnected" and HAS_TELEGRAM_CREDS:
-        is_healthy = False
-    if bot_status == "stopped":
-        is_healthy = False
+        critical_errors += 1
+    if HAS_TELEGRAM_CREDS and tg_status in ["disconnected", "error"]:
+        critical_errors += 1
 
-    overall = "healthy" if is_healthy else "degraded"
+    overall = "healthy"
+    if critical_errors >= 2:
+        overall = "unhealthy"
+    elif critical_errors == 1:
+        overall = "degraded"
+
+    total_time = round((time.time() - start_time) * 1000)
 
     return JSONResponse({
         "status": overall,
         "version": "v1.2.0",
-        "telegram_client": tg_status,
-        "telegram_secondary": tg2_status,
-        "telegram_bot": bot_status,
-        "supabase": sb_status,
-        "details": {
-            "telegram_configured": HAS_TELEGRAM_CREDS,
-            "bot_configured": bot_status != "not_configured",
-            "supabase_configured": sb_status != "unconfigured"
+        "response_time_ms": total_time,
+        "services": {
+            "supabase": {"status": sb_status, "time_ms": sb_time},
+            "telegram_primary": {"status": tg_status, "time_ms": tg_time},
+            "telegram_secondary": {"status": tg2_status, "time_ms": tg2_time},
+            "telegram_bot": {"status": bot_status, "time_ms": bot_time}
         }
     })
 
@@ -1040,22 +1061,35 @@ async def catalog(request: Request, authorization: str = Header(None)):
     except HTTPException:
         raise HTTPException(status_code=429, detail="Too many requests")
 
-    auth_val = authorization
-    user = await verify_supabase_token(auth_val)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        supabase_url = os.environ.get("SUPABASE_URL")
+        anon_key = os.environ.get("SUPABASE_ANON_KEY")
+        if not supabase_url or not anon_key:
+            return JSONResponse({"error": "Database unavailable", "status": "degraded"}, status_code=503)
 
-    now = time.time()
-    async with catalog_lock:
-        data = catalog_cache["data"]
-        ts = catalog_cache["timestamp"]
+        auth_val = authorization
+        user = await verify_supabase_token(auth_val)
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
 
-        if data is None or now - ts > CATALOG_TTL:
-            await refresh_catalog()
-            async with catalog_lock:
-                data = catalog_cache["data"]
+        now = time.time()
+        async with catalog_lock:
+            data = catalog_cache["data"]
+            ts = catalog_cache["timestamp"]
 
-    return data or {"subjects": [], "total_videos": 0}
+            if data is None or now - ts > CATALOG_TTL:
+                await refresh_catalog()
+                async with catalog_lock:
+                    data = catalog_cache["data"]
+
+        if not data:
+            return JSONResponse({"error": "Database unavailable", "status": "degraded"}, status_code=503)
+            
+        return JSONResponse(content=data, headers={"Cache-Control": "public, max-age=300"})
+
+    except Exception as e:
+        logger.error(f"[NexusEdu] Catalog Error: {e}")
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 _last_refresh_time = 0.0
@@ -1080,9 +1114,32 @@ async def warmup(request: Request):
     except HTTPException:
         return {"status": "rate_limited"}
 
+    import time
+    start_time = time.time()
+    
+    # 1. Warmup Supabase Connection
+    sb_status = "ok"
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as hclient:
+                r = await hclient.options(f"{SUPABASE_URL}/rest/v1/")
+                sb_status = "ok" if r.status_code in [200, 204] else "error"
+        except Exception:
+            sb_status = "error"
+    else:
+        sb_status = "unconfigured"
+    
+    # 2. Preload catalog cache
     if not video_map:
         await refresh_catalog()
-    return {"status": "ok", "videos": len(video_map)}
+        
+    duration = time.time() - start_time
+    return {
+        "status": "ok", 
+        "videos": len(video_map), 
+        "supabase": sb_status,
+        "elapsed_ms": round(duration * 1000)
+    }
 
 
 @app.get("/api/prefetch/{video_id}")
@@ -1466,6 +1523,67 @@ async def admin_generate_chapter_code(req: GenerateChapterCodeReq, request: Requ
     except Exception as e:
         raise HTTPException(500, str(e))
 
+
+class ProgressUpdateItem(BaseModel):
+    video_id: str
+    progress: float
+    duration: float
+
+class ProgressBatchReq(BaseModel):
+    updates: list[ProgressUpdateItem]
+
+@app.post("/api/progress/batch")
+async def batch_progress(req: ProgressBatchReq, request: Request, authorization: str = Header(None)):
+    user = await verify_supabase_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Auth required")
+    
+    user_id = user.get("sub") or user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        logger.error("[NexusEdu] Missing SUPABASE_URL or SUPABASE_SERVICE_KEY")
+        return {"status": "error", "message": "Database not configured"}
+
+    if not req.updates:
+        return {"status": "ok", "message": "no updates"}
+
+    upsert_data = []
+    now_str = datetime.utcnow().isoformat() + "Z"
+    
+    for up in req.updates:
+        completed = up.duration > 0 and (up.progress / up.duration) >= 0.95
+        progress_percent = round((up.progress / up.duration) * 100) if up.duration > 0 else 0
+        
+        upsert_data.append({
+            "user_id": user_id,
+            "video_id": up.video_id,
+            "progress_seconds": math.floor(up.progress),
+            "progress_percent": progress_percent,
+            "completed": completed,
+            "watched_at": now_str,
+            "updated_at": now_str
+        })
+        
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{SUPABASE_URL}/rest/v1/watch_history",
+                headers={
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates,return=minimal"
+                },
+                json=upsert_data
+            )
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error(f"[NexusEdu] Failed to batch save progress: {e}")
+        raise HTTPException(500, "Failed to save progress")
+        
+    return {"status": "ok", "saved": len(req.updates)}
 
 # ─── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":

@@ -29,14 +29,34 @@ function AuthManager() {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session?.user) {
-          useAuthStore.getState().setUser(session.user);
-          useAuthStore.getState().setSession(session);
+      async (event, session) => {
+        const store = useAuthStore.getState();
+        
+        if (event === 'SIGNED_OUT') {
+          store.logout();
+        } else if (session?.user) {
+          store.setUser(session.user);
+          store.setSession(session);
+          
+          // Refresh profile on sign in
+          if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+            try {
+              const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+              store.setProfile(data);
+            } catch (err) {
+               console.warn("Could not fetch profile during auth event", err);
+            }
+          }
         } else {
-          useAuthStore.getState().logout();
+          store.logout(); // Fallback if no session
         }
-        useAuthStore.getState().setLoading(false);
+        
+        // We only set loading false if we aren't already handling a hydrate
+        // hydrate() natively sets isLoading to false when done.
+        // We can ensure we don't accidentally stop the loading spinner too early.
+        if (event !== 'INITIAL_SESSION') {
+          store.setLoading(false);
+        }
       }
     );
 
@@ -45,6 +65,9 @@ function AuthManager() {
 
   return null;
 }
+
+import { OfflineBanner } from "@/components/OfflineBanner";
+import { UpdateToast } from "@/components/UpdateToast";
 
 const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -101,6 +124,8 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <SystemSettingsProvider>
         <TooltipProvider>
+          <OfflineBanner />
+          <UpdateToast />
           <Toaster />
           <Sonner />
           <AuthManager />

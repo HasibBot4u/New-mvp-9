@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, PictureInPicture, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useVideoProgress } from '@/hooks/useVideoProgress';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { WakeUpCountdown } from '../WakeUpCountdown';
 import { supabase } from '@/integrations/supabase/client';
 import { getStreamUrl, clearBackendCache, api } from '@/lib/api';
@@ -66,8 +66,28 @@ export function VideoPlayer({ videoId, sizeMb = 0, onComplete, onTimeUpdate }: V
   const [resumeTime, setResumeTime] = useState(0);
   const [actualDuration, setActualDuration] = useState<number>(0);
   const [needsWakeUp, setNeedsWakeUp] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
 
-  const { isCompleted, handleTimeUpdate: updateProgress, loadProgressFromSupabase, saveProgressToSupabase } = useVideoProgress(videoId, actualDuration);
+  const { updateProgress, flush } = useBatchProgress();
+  
+  const loadProgressFromSupabase = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return 0;
+      const { data } = await supabase
+        .from('watch_history')
+        .select('progress_seconds, completed')
+        .eq('user_id', session.user.id)
+        .eq('video_id', videoId)
+        .maybeSingle();
+
+      if (data) {
+        setIsCompleted(data.completed);
+        return data.progress_seconds || 0;
+      }
+    } catch {}
+    return 0;
+  }, [videoId]);
   
   const mountedRef = useRef(true);
   const isPlayingRef = useRef(isPlaying);
@@ -438,7 +458,7 @@ export function VideoPlayer({ videoId, sizeMb = 0, onComplete, onTimeUpdate }: V
     const time = videoRef.current.currentTime;
     setCurrentTime(time);
     if (onTimeUpdate) onTimeUpdate(time);
-    updateProgress(time);
+    updateProgress(videoId, time, actualDuration);
 
     if (videoRef.current.buffered.length > 0) {
       setBuffered(videoRef.current.buffered.end(videoRef.current.buffered.length - 1));
@@ -524,11 +544,9 @@ export function VideoPlayer({ videoId, sizeMb = 0, onComplete, onTimeUpdate }: V
         onPlaying={() => { setIsBuffering(false); setIsPlaying(true); }}
         onPause={() => {
           setIsPlaying(false);
-          if (videoRef.current && actualDuration > 0) {
-            saveProgressToSupabase(videoRef.current.currentTime, actualDuration);
-          }
+          flush();
         }}
-        onEnded={() => { setIsPlaying(false); setShowControls(true); }}
+        onEnded={() => { setIsPlaying(false); setShowControls(true); flush(); }}
         onError={handleVideoError}
         onContextMenu={(e) => e.preventDefault()}
         onClick={() => { if (hasStarted) togglePlay(); }}

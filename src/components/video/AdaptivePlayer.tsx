@@ -9,6 +9,7 @@ interface AdaptivePlayerProps {
   poster?: string;
   onTimeUpdate?: (time: number) => void;
   onEnded?: () => void;
+  onPause?: () => void;
   onError?: () => void;
   onLoadedMetadata?: (duration: number) => void;
 }
@@ -18,6 +19,7 @@ export const AdaptivePlayer = React.forwardRef<HTMLVideoElement, AdaptivePlayerP
   token,
   poster,
   onTimeUpdate,
+  onPause,
   onEnded,
   onError,
   onLoadedMetadata
@@ -83,7 +85,10 @@ export const AdaptivePlayer = React.forwardRef<HTMLVideoElement, AdaptivePlayerP
         onWaiting={() => setIsBuffering(true)}
         onPlaying={() => setIsBuffering(false)}
         onCanPlay={() => setIsBuffering(false)}
-        onPause={() => setIsBuffering(false)}
+        onPause={() => {
+            setIsBuffering(false);
+            if (onPause) onPause();
+        }}
         aria-label="Video player"
       >
         <track kind="captions" srcLang="en" label="English" />

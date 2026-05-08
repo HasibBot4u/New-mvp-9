@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useVideoProgress } from "@/hooks/useVideoProgress";
+import { useBatchProgress } from "@/hooks/useBatchProgress";
 import { trackEvent } from "@/lib/analytics";
 
 import { ProtectedPlayer } from "@/components/video/ProtectedPlayer";
@@ -40,6 +40,7 @@ export default function PlayerPage() {
   const noteSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [errored, setErrored] = useState(false);
+  const [errorType, setErrorType] = useState<"403" | "404" | "network" | "unknown" | null>(null);
   const [notes, setNotes] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
@@ -104,7 +105,7 @@ export default function PlayerPage() {
 
   const source = video ? getVideoSource(video) : null;
 
-  const { handleTimeUpdate: updateProgressHook, loadProgressFromSupabase, saveProgressToSupabase } = useVideoProgress(videoId || '', duration);
+  const { updateProgress, flush } = useBatchProgress();
 
   useEffect(() => {
     // Get initial session
@@ -137,6 +138,27 @@ export default function PlayerPage() {
 
   const fetchedProgress = useRef(0);
 
+  const loadProgressFromSupabase = useCallback(async () => {
+    if (!user || !video) return 0;
+    try {
+      const { data, error } = await supabase
+        .from('watch_history')
+        .select('progress_seconds')
+        .eq('user_id', user.id)
+        .eq('video_id', video.id)
+        .maybeSingle();
+        
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error loading progress:', error);
+        return 0;
+      }
+      return data?.progress_seconds || 0;
+    } catch (e) {
+      console.error('Exception loading progress:', e);
+      return 0;
+    }
+  }, [user, video]);
+
   // Load existing watch progress + notes
   useEffect(() => {
     if (!user || !video) return;
@@ -156,21 +178,40 @@ export default function PlayerPage() {
       .then(({ data }: any) => { if (data?.content) setNotes(data.content); });
   }, [user, video, loadProgressFromSupabase]);
 
-  const handleVideoEnded = useCallback(async () => {
+  const handleVideoEnded = useCallback(() => {
     if (!user || !video) return;
-    await saveProgressToSupabase(videoRef.current?.duration || 0, videoRef.current?.duration || 0);
-  }, [user, video, saveProgressToSupabase]);
+    if (videoRef.current) {
+        updateProgress(video.id, videoRef.current.duration, videoRef.current.duration);
+        flush();
+    }
+  }, [user, video, updateProgress, flush]);
 
   const retryPlayback = useCallback(() => {
     setErrored(false);
+    setErrorType(null);
     if (videoRef.current) {
       try { videoRef.current.load(); videoRef.current.play().catch(() => {}); } catch (e) { console.error("Retry playback error:", e); }
     }
   }, []);
 
-  const handleVideoError = useCallback(() => {
+  const handleVideoError = useCallback(async () => {
     setErrored(true);
-  }, []);
+    if (source?.type === "telegram" && sessionToken) {
+      const controller = new AbortController();
+      try {
+        const checkUrl = `${source.url}?token=${sessionToken}`;
+        const res = await fetch(checkUrl, { signal: controller.signal });
+        if (res.status === 401 || res.status === 403) setErrorType("403");
+        else if (res.status === 404) setErrorType("404");
+        else setErrorType("unknown");
+        controller.abort();
+      } catch (err) {
+        setErrorType("network");
+      }
+    } else {
+      setErrorType("unknown");
+    }
+  }, [source, sessionToken]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -287,11 +328,17 @@ export default function PlayerPage() {
           ) : errored ? (
             <div className="absolute inset-0 flex items-center justify-center p-6">
               <div className="rounded-2xl glass-strong border border-border p-8 max-w-md text-center">
-                <p className="font-bangla text-foreground mb-3">
-                  ভিডিও লোড হচ্ছে না। ব্যাকএন্ড সার্ভার চালু হতে কিছু সময় লাগছে।
+                <p className="font-bangla text-foreground mb-3 text-lg">
+                  {errorType === "403" && "Access denied. Please log in again."}
+                  {errorType === "404" && "Video not found."}
+                  {errorType === "network" && "Connection failed. Please check your internet."}
+                  {(!errorType || errorType === "unknown") && "ভিডিও লোড হচ্ছে না। ব্যাকএন্ড সার্ভার চালু হতে কিছু সময় লাগছে।"}
                 </p>
-                <Button onClick={retryPlayback} className="rounded-full bg-primary hover:bg-primary-glow shadow-glow mt-2">
-                  <RotateCw className="w-4 h-4 mr-2" /> আবার চেষ্টা করুন
+                <Button 
+                  onClick={() => errorType === "403" ? nav('/login') : retryPlayback()} 
+                  className="rounded-full bg-primary hover:bg-primary-glow shadow-glow mt-4"
+                >
+                  <RotateCw className="w-4 h-4 mr-2" /> {errorType === "403" ? "লগইন করুন" : "আবার চেষ্টা করুন"}
                 </Button>
               </div>
             </div>
@@ -304,8 +351,9 @@ export default function PlayerPage() {
                 trackEvent("video_play", { video_id: video.id, title: video.title });
               }}
               onTimeUpdate={(time: number) => {
-                updateProgressHook(time);
+                updateProgress(video.id, time, duration);
               }}
+              onPause={() => flush()}
               onEnded={() => {
                 trackEvent("video_complete", { video_id: video.id, title: video.title });
                 handleVideoEnded();

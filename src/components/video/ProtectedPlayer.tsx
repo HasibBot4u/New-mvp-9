@@ -9,6 +9,7 @@ interface ProtectedPlayerProps {
   title?: string;
   onTimeUpdate?: (time: number) => void;
   onLoadedMetadata?: (duration: number) => void;
+  onPause?: () => void;
   onEnded?: () => void;
   onError?: () => void;
 }

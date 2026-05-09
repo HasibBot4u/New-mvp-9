@@ -74,10 +74,17 @@ export const useAuthStore = create<AuthState>()(
         
         let timeoutId: any;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error("Session check timed out")), 5000);
+          timeoutId = setTimeout(() => reject(new Error("Session check timed out")), 2000);
         });
 
         try {
+          // If using the placeholder URL, fail instantly
+          // Avoid accessing import.meta.env if possible, just look at the client
+          const supabaseUrl = (supabase as any).supabaseUrl || '';
+          if (supabaseUrl.includes('placeholder-url')) {
+             throw new Error("Supabase is not configured");
+          }
+
           const { data: { session }, error } = await Promise.race([
             supabase.auth.getSession(),
             timeoutPromise
@@ -113,8 +120,11 @@ export const useAuthStore = create<AuthState>()(
           }
         } catch (error: any) {
           clearTimeout(timeoutId);
-          console.error("Hydration error:", error);
-          set({ user: null, session: null, profile: null, isAuthenticated: false, isLoading: false, error: error.message || "Hydration Error" });
+          // Only log if it's a real unexpected error, not just our missing config or timeout
+          if (error?.message !== "Supabase is not configured" && error?.message !== "Session check timed out") {
+            console.error("Hydration error:", error);
+          }
+          set({ user: null, session: null, profile: null, isAuthenticated: false, isLoading: false, error: null });
           localStorage.removeItem('auth_indicator');
         }
       }

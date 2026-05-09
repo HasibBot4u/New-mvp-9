@@ -894,9 +894,11 @@ async def get_thumbnail(video_id: str, request: Request):
 async def ping(request: Request):
     try:
         from datetime import datetime
-        return JSONResponse({"status": "ok", "timestamp": datetime.utcnow().isoformat() + "Z"})
+        return {"status": "ok", "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        import traceback
+        logger.error(f"[NexusEdu] Ping error: {traceback.format_exc()}")
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
 @app.post("/api/bot_webhook")
@@ -1057,15 +1059,16 @@ async def channel_health(request: Request, authorization: str = Header(None)):
 @app.get("/api/catalog")
 async def catalog(request: Request, authorization: str = Header(None)):
     try:
-        await check_rate_limit(request, limit=30, window=60, prefix="catalog")
-    except HTTPException:
-        raise HTTPException(status_code=429, detail="Too many requests")
+        from fastapi import HTTPException
+        try:
+            await check_rate_limit(request, limit=30, window=60, prefix="catalog")
+        except HTTPException:
+            raise HTTPException(status_code=429, detail="Too many requests")
 
-    try:
         supabase_url = os.environ.get("SUPABASE_URL")
         anon_key = os.environ.get("SUPABASE_ANON_KEY")
         if not supabase_url or not anon_key:
-            return JSONResponse({"error": "Database unavailable", "status": "degraded"}, status_code=503)
+            return JSONResponse({"error": "Database not configured", "status": "degraded"}, status_code=503)
 
         auth_val = authorization
         user = await verify_supabase_token(auth_val)
@@ -1083,13 +1086,14 @@ async def catalog(request: Request, authorization: str = Header(None)):
                     data = catalog_cache["data"]
 
         if not data:
-            return JSONResponse({"error": "Database unavailable", "status": "degraded"}, status_code=503)
+            return JSONResponse({"error": "Database not configured", "status": "degraded"}, status_code=503)
             
         return JSONResponse(content=data, headers={"Cache-Control": "public, max-age=300"})
 
     except Exception as e:
-        logger.error(f"[NexusEdu] Catalog Error: {e}")
-        return JSONResponse({"error": "Internal server error"}, status_code=500)
+        import traceback
+        logger.error(f"[NexusEdu] Catalog Error: {traceback.format_exc()}")
+        return JSONResponse({"error": "Failed to load catalog", "detail": str(e)}, status_code=500)
 
 
 _last_refresh_time = 0.0

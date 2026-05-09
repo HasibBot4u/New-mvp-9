@@ -119,6 +119,73 @@ const queryClient = new QueryClient({
   },
 });
 
+const AppContent = () => {
+  const isLoading = useAuthStore(state => state.isLoading);
+  
+  // NEVER show infinite loading — useAuthStore hydrate has a 5s timeout
+  if (isLoading) {
+    return <PageLoader />;
+  }
+
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        {/* Public */}
+        <Route element={<PublicShell />}>
+          <Route path="/" element={<Index />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/refund-policy" element={<RefundPolicyPage />} />
+          <Route path="/success-stories" element={<SuccessStoriesPage />} />
+        </Route>
+
+        {/* Auth */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/maintenance" element={<MaintenancePage />} />
+
+        {/* Student app */}
+        <Route element={<ProtectedRoute><StudentLayout /></ProtectedRoute>}>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/courses" element={<CoursesPage />} />
+          <Route path="/subject/:subjectSlug" element={<SubjectPage />} />
+          <Route path="/cycle/:cycleId" element={<ChaptersPage />} />
+          <Route path="/chapter/:chapterId" element={<VideoListPage />} />
+          <Route path="/watch/:videoId" element={<PlayerPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/live" element={<LivePage />} />
+          <Route path="/progress" element={<ProgressPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/notes" element={<NotesPage />} />
+          <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/enrollment" element={<EnrollmentPage />} />
+        </Route>
+
+        {/* Admin */}
+        <Route element={<ProtectedRoute requireAdmin><AdminLayout /></ProtectedRoute>}>
+          <Route path="/admin" element={<AdminDashboardPage />} />
+          <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/content" element={<AdminContentPage />} />
+          <Route path="/admin/announcements" element={<AdminAnnouncementsPage />} />
+          <Route path="/admin/live" element={<AdminLivePage />} />
+          <Route path="/admin/logs" element={<AdminLogsPage />} />
+          <Route path="/admin/system" element={<AdminSystemPage />} />
+          <Route path="/admin/enrollment" element={<AdminEnrollmentPage />} />
+        </Route>
+
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
+  );
+};
+
 const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
@@ -135,66 +202,11 @@ const App = () => (
             <LiveRegion />
             <AuthProvider>
               <CatalogProvider>
-                <Suspense fallback={<PageLoader />}>
-                  <Routes>
-                    {/* Public */}
-
-                  <Route element={<PublicShell />}>
-                    <Route path="/" element={<Index />} />
-                    <Route path="/about" element={<AboutPage />} />
-                    <Route path="/pricing" element={<PricingPage />} />
-                    <Route path="/contact" element={<ContactPage />} />
-                    <Route path="/privacy" element={<PrivacyPage />} />
-                    <Route path="/terms" element={<TermsPage />} />
-                    <Route path="/refund-policy" element={<RefundPolicyPage />} />
-                    <Route path="/success-stories" element={<SuccessStoriesPage />} />
-                  </Route>
-
-                  {/* Auth */}
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/signup" element={<SignupPage />} />
-                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-                  <Route path="/reset-password" element={<ResetPasswordPage />} />
-                  <Route path="/maintenance" element={<MaintenancePage />} />
-
-                  {/* Student app */}
-                  <Route element={<ProtectedRoute><StudentLayout /></ProtectedRoute>}>
-                    <Route path="/dashboard" element={<DashboardPage />} />
-                    <Route path="/courses" element={<CoursesPage />} />
-                    <Route path="/subject/:subjectSlug" element={<SubjectPage />} />
-                    <Route path="/cycle/:cycleId" element={<ChaptersPage />} />
-                    <Route path="/chapter/:chapterId" element={<VideoListPage />} />
-                    <Route path="/watch/:videoId" element={<PlayerPage />} />
-                    <Route path="/search" element={<SearchPage />} />
-                    <Route path="/notifications" element={<NotificationsPage />} />
-                    <Route path="/live" element={<LivePage />} />
-                    <Route path="/progress" element={<ProgressPage />} />
-                    <Route path="/profile" element={<ProfilePage />} />
-                    <Route path="/notes" element={<NotesPage />} />
-                    <Route path="/resources" element={<ResourcesPage />} />
-                    <Route path="/enrollment" element={<EnrollmentPage />} />
-                  </Route>
-
-                  {/* Admin */}
-                  <Route element={<ProtectedRoute requireAdmin><AdminLayout /></ProtectedRoute>}>
-                    <Route path="/admin" element={<AdminDashboardPage />} />
-                    <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
-                    <Route path="/admin/users" element={<AdminUsersPage />} />
-                    <Route path="/admin/content" element={<AdminContentPage />} />
-                    <Route path="/admin/announcements" element={<AdminAnnouncementsPage />} />
-                    <Route path="/admin/live" element={<AdminLivePage />} />
-                    <Route path="/admin/logs" element={<AdminLogsPage />} />
-                    <Route path="/admin/system" element={<AdminSystemPage />} />
-                    <Route path="/admin/enrollment" element={<AdminEnrollmentPage />} />
-                  </Route>
-
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-                </Suspense>
+                <AppContent />
               </CatalogProvider>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
       </SystemSettingsProvider>
     </QueryClientProvider>
   </ErrorBoundary>

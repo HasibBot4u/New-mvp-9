@@ -3,7 +3,6 @@ import { persist } from 'zustand/middleware';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 
-// Assume Profile type exists or create a basic one
 interface Profile {
   id: string;
   role?: string;
@@ -16,11 +15,13 @@ interface AuthState {
   profile: Profile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  error: string | null;
   setUser: (user: User | null) => void;
   setSession: (session: Session | null) => void;
   setProfile: (profile: Profile | null) => void;
-  setRole: (role: string) => void; // Keep for backward compatibility
+  setRole: (role: string) => void; 
   setLoading: (isLoading: boolean) => void;
+  setError: (error: string | null) => void;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
 }
@@ -32,7 +33,8 @@ export const useAuthStore = create<AuthState>()(
       session: null,
       profile: null,
       isAuthenticated: false,
-      isLoading: true, // Start true so it doesn't flash
+      isLoading: true, 
+      error: null,
       
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       
@@ -52,13 +54,14 @@ export const useAuthStore = create<AuthState>()(
       },
       
       setLoading: (isLoading) => set({ isLoading }),
+      setError: (error) => set({ error }),
       
       logout: async () => {
-        set({ isLoading: true });
+        set({ isLoading: true, error: null });
         try {
           await supabase.auth.signOut();
-        } catch (error) {
-          console.error("Error signing out:", error);
+        } catch (err) {
+          console.error("Error signing out:", err);
         }
         localStorage.removeItem('auth_indicator');
         localStorage.removeItem('supabase_token');
@@ -66,17 +69,24 @@ export const useAuthStore = create<AuthState>()(
       },
       
       hydrate: async () => {
-        // Only run hydration if we haven't already hydrated recently or on mount
         const hasAuthIndicator = localStorage.getItem('auth_indicator') === 'true';
-        set({ isLoading: true, isAuthenticated: hasAuthIndicator });
+        set({ isLoading: true, isAuthenticated: hasAuthIndicator, error: null });
         
+        let timeoutId: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("Session check timed out")), 5000);
+        });
+
         try {
-          const { data: { session }, error } = await supabase.auth.getSession();
+          const { data: { session }, error } = await Promise.race([
+            supabase.auth.getSession(),
+            timeoutPromise
+          ]) as { data: { session: Session | null }, error: any };
           
+          clearTimeout(timeoutId);
           if (error) throw error;
           
           if (session?.user) {
-            // Load profile if needed
             let profileData = null;
             try {
               const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
@@ -101,16 +111,16 @@ export const useAuthStore = create<AuthState>()(
             localStorage.removeItem('auth_indicator');
             localStorage.removeItem('supabase_token');
           }
-        } catch (error) {
+        } catch (error: any) {
+          clearTimeout(timeoutId);
           console.error("Hydration error:", error);
-          set({ user: null, session: null, profile: null, isAuthenticated: false, isLoading: false });
+          set({ user: null, session: null, profile: null, isAuthenticated: false, isLoading: false, error: error.message || "Hydration Error" });
           localStorage.removeItem('auth_indicator');
         }
       }
     }),
     {
       name: 'auth-storage',
-      // Persist only the bare minimum indicator
       partialize: (state) => ({ isAuthenticated: state.isAuthenticated }),
     }
   )

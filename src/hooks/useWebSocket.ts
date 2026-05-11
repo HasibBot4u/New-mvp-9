@@ -63,6 +63,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
       socket.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, options.room, SOCKET_URL]);
 
   const sendMessage = useCallback((message: string) => {

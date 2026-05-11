@@ -85,7 +85,9 @@ export function VideoPlayer({ videoId, sizeMb = 0, onComplete, onTimeUpdate }: V
         setIsCompleted(data.completed);
         return data.progress_seconds || 0;
       }
-    } catch {}
+    } catch {
+      // ignore
+    }
     return 0;
   }, [videoId]);
   

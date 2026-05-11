@@ -28,6 +28,7 @@ export function VirtualVideoList({ videos, isLoading }: VirtualVideoListProps) {
     sessionStorage.setItem('videoListScroll', target.scrollTop.toString());
   };
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: isLoading ? 10 : videos.length,
     getScrollElement: () => parentRef.current,

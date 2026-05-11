@@ -56,10 +56,11 @@ export default function VideoListPage() {
     setCode("");
   };
 
+  const chapterVideos = chapter?.videos;
   const displayedVideos = useMemo(() => {
-    if (!chapter?.videos) return [];
+    if (!chapterVideos) return [];
     
-    let filtered = [...chapter.videos];
+    let filtered = [...chapterVideos];
     
     if (searchQuery.trim() !== '') {
         const query = searchQuery.toLowerCase();
@@ -73,7 +74,7 @@ export default function VideoListPage() {
       if (sortOrder === "asc") return a.display_order - b.display_order;
       return b.display_order - a.display_order;
     });
-  }, [chapter?.videos, sortOrder, searchQuery]);
+  }, [chapterVideos, sortOrder, searchQuery]);
 
   if (isLoading) return (
     <div className="container py-20 space-y-4">

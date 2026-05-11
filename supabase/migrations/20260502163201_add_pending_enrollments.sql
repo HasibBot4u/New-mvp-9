@@ -21,7 +21,8 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Users can manage own enrollments" ON pending_enrollments FOR ALL USING (user_id = auth.uid());
+    DROP POLICY IF EXISTS "Users can manage own enrollments" ON pending_enrollments;
+CREATE POLICY "Users can manage own enrollments" ON pending_enrollments FOR ALL USING (user_id = auth.uid());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -29,7 +30,8 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Admins have full access to enrollments" ON pending_enrollments USING (is_admin());
+    DROP POLICY IF EXISTS "Admins have full access to enrollments" ON pending_enrollments;
+CREATE POLICY "Admins have full access to enrollments" ON pending_enrollments USING (is_admin());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 

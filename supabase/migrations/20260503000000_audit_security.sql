@@ -1,3 +1,5 @@
+BEGIN;
+
 -- Create audit_logs table
 DROP FUNCTION IF EXISTS admin_generate_chapter_code(UUID, INTEGER, TEXT, TEXT) CASCADE;
 DROP FUNCTION IF EXISTS delete_user_account(UUID, TEXT) CASCADE;
@@ -22,7 +24,8 @@ BEGIN
         WHERE schemaname = 'public'
     LOOP
         EXECUTE format('DROP POLICY IF EXISTS "Admins have full access" ON public.%I;', t);
-        EXECUTE format('CREATE POLICY "Admins have full access" ON public.%I USING (is_admin());', t);
+        EXECUTE format('DROP POLICY IF EXISTS "Admins have full access" ON public;
+CREATE POLICY "Admins have full access" ON public.%I USING (is_admin());', t);
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
@@ -56,3 +59,6 @@ BEGIN
     DELETE FROM auth.users WHERE id = target_user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+COMMIT;

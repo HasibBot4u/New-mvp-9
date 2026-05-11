@@ -1,3 +1,5 @@
+BEGIN;
+
 DROP FUNCTION IF EXISTS get_admin_stats() CASCADE;
 
 CREATE OR REPLACE FUNCTION get_admin_stats() RETURNS json SECURITY DEFINER AS $$
@@ -34,3 +36,6 @@ CREATE INDEX IF NOT EXISTS idx_live_classes_scheduled ON live_classes(scheduled_
 CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_watch_history_user_id ON watch_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_enrollment_codes_code ON enrollment_codes(code);
+
+
+COMMIT;

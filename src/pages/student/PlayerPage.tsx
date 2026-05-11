@@ -10,8 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useBatchProgress } from "@/hooks/useBatchProgress";
 import { trackEvent } from "@/lib/analytics";
 
-import { ProtectedPlayer } from "@/components/video/ProtectedPlayer";
-
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
 
@@ -44,6 +42,7 @@ export default function PlayerPage() {
   const [notes, setNotes] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
@@ -326,13 +325,13 @@ export default function PlayerPage() {
               allowFullScreen
             />
           ) : errored ? (
-            <div className="absolute inset-0 flex items-center justify-center p-6">
+            <div className="absolute inset-0 flex items-center justify-center p-6 bg-black z-20">
               <div className="rounded-2xl glass-strong border border-border p-8 max-w-md text-center">
-                <p className="font-bangla text-foreground mb-3 text-lg">
+                <p className="font-bangla text-white mb-3 text-lg">
                   {errorType === "403" && "Access denied. Please log in again."}
                   {errorType === "404" && "Video not found."}
                   {errorType === "network" && "Connection failed. Please check your internet."}
-                  {(!errorType || errorType === "unknown") && "ভিডিও লোড হচ্ছে না। ব্যাকএন্ড সার্ভার চালু হতে কিছু সময় লাগছে।"}
+                  {(!errorType || errorType === "unknown") && "ভিডিও লোড হচ্ছে না। ব্যাকএন্ড সার্ভার কাজ করছে না বা ফাইল এরর।"}
                 </p>
                 <Button 
                   onClick={() => errorType === "403" ? nav('/login') : retryPlayback()} 
@@ -343,23 +342,43 @@ export default function PlayerPage() {
               </div>
             </div>
           ) : (
-            <ProtectedPlayer
-              src={source.type === "telegram" ? `${source.url}?token=${sessionToken}` : source.url}
-              token={sessionToken || ""}
-              onLoadedMetadata={(dur: number) => {
-                setDuration(dur);
-                trackEvent("video_play", { video_id: video.id, title: video.title });
-              }}
-              onTimeUpdate={(time: number) => {
-                updateProgress(video.id, time, duration);
-              }}
-              onPause={() => flush()}
-              onEnded={() => {
-                trackEvent("video_complete", { video_id: video.id, title: video.title });
-                handleVideoEnded();
-              }}
-              onError={handleVideoError as () => void}
-            />
+            <div className="relative w-full h-full bg-black group flex items-center justify-center">
+              {!isLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 bg-black/50">
+                  <Loader2 className="w-10 h-10 animate-spin text-primary" />
+                </div>
+              )}
+              <video
+                ref={videoRef}
+                src={source.type === "telegram" ? `${source.url}?token=${sessionToken || ''}` : source.url}
+                className="w-full h-full object-contain"
+                controls
+                autoPlay
+                playsInline
+                controlsList="nodownload"
+                onLoadStart={() => setIsLoaded(false)}
+                onWaiting={() => setIsLoaded(false)}
+                onPlaying={() => setIsLoaded(true)}
+                onCanPlay={() => setIsLoaded(true)}
+                onLoadedMetadata={(e) => {
+                  const dur = e.currentTarget.duration;
+                  if (!isNaN(dur)) setDuration(dur);
+                  trackEvent("video_play", { video_id: video.id, title: video.title });
+                }}
+                onTimeUpdate={(e) => {
+                  updateProgress(video.id, e.currentTarget.currentTime, duration);
+                }}
+                onPause={() => flush()}
+                onEnded={() => {
+                  trackEvent("video_complete", { video_id: video.id, title: video.title });
+                  handleVideoEnded();
+                }}
+                onError={(e) => {
+                  console.error("Video error:", e.currentTarget.error);
+                  handleVideoError();
+                }}
+              />
+            </div>
           )}
         </div>
 

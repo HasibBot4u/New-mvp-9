@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -23,39 +23,14 @@ import { RouteAnalytics } from "@/components/seo/RouteAnalytics";
 
 function AuthManager() {
   useEffect(() => {
-    const initAuth = async () => {
-      await useAuthStore.getState().hydrate();
-    };
-    initAuth();
+    // a. Call authStore.hydrate() in useEffect ONCE
+    useAuthStore.getState().hydrate();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event) => {
         const store = useAuthStore.getState();
-        
         if (event === 'SIGNED_OUT') {
           store.logout();
-        } else if (session?.user) {
-          store.setUser(session.user);
-          store.setSession(session);
-          
-          // Refresh profile on sign in
-          if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-            try {
-              const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-              store.setProfile(data);
-            } catch (err) {
-               console.warn("Could not fetch profile during auth event", err);
-            }
-          }
-        } else {
-          store.logout(); // Fallback if no session
-        }
-        
-        // We only set loading false if we aren't already handling a hydrate
-        // hydrate() natively sets isLoading to false when done.
-        // We can ensure we don't accidentally stop the loading spinner too early.
-        if (event !== 'INITIAL_SESSION') {
-          store.setLoading(false);
         }
       }
     );
@@ -69,7 +44,6 @@ function AuthManager() {
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { UpdateToast } from "@/components/UpdateToast";
 
-const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const MaintenancePage = lazy(() => import("./pages/MaintenancePage"));
 
@@ -121,18 +95,39 @@ const queryClient = new QueryClient({
 
 const AppContent = () => {
   const isLoading = useAuthStore(state => state.isLoading);
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
   
-  // NEVER show infinite loading — useAuthStore hydrate has a 5s timeout
+  // e. Add a 5-second timeout for hydration: if still loading after 5s, force isLoading = false
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (useAuthStore.getState().isLoading) {
+        useAuthStore.setState({ isLoading: false });
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // b. If isLoading is true, show: "Checking session..." with a timeout message
   if (isLoading) {
-    return <PageLoader />;
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-center">
+        <PageLoader />
+        <h2 className="mt-4 text-lg font-medium text-foreground">Checking session...</h2>
+        <p className="text-sm text-foreground-muted mt-2">Please wait while we verify your account.</p>
+      </div>
+    );
   }
+
+  // c. If isLoading is false and NOT authenticated, show login page
+  // d. If isLoading is false and authenticated, show dashboard
+  // We apply this to the root index route to handle default navigation based on auth state.
 
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Public */}
         <Route element={<PublicShell />}>
-          <Route path="/" element={<Index />} />
+          <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/contact" element={<ContactPage />} />

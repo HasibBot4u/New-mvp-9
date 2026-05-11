@@ -34,19 +34,19 @@ export class ErrorBoundary extends Component<Props, State> {
               <AlertTriangle className="w-8 h-8 text-red-500" />
             </div>
             
-            <h2 className="text-xl font-bold text-foreground mb-2 font-bangla">
-              দুঃখিত, একটি সমস্যা হয়েছে
+            <h2 className="text-xl font-bold text-foreground mb-4">
+              Something went wrong. Please refresh.
             </h2>
-            <p className="text-foreground-muted mb-8 font-bangla">
-              অ্যাপ্লিকেশন লোড করতে একটি অপ্রত্যাশিত সমস্যা হয়েছে। অনুগ্রহ করে পেজটি রিলোড করুন।
+            <p className="text-foreground-muted mb-8 text-sm">
+              We encountered an unexpected error, such as an authentication problem or network issue.
             </p>
 
             <Button
               onClick={() => window.location.reload()}
-              className="w-full flex items-center justify-center space-x-2 font-bangla"
+              className="w-full flex items-center justify-center space-x-2"
             >
               <RefreshCw className="w-5 h-5 mr-2" />
-              <span>রিলোড করুন</span>
+              <span>Refresh</span>
             </Button>
           </div>
         </div>

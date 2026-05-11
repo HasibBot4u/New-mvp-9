@@ -31,9 +31,10 @@ export function LiveClassRoom({ liveClass, onLeave }: LiveClassRoomProps) {
     jitsiApiRef.current = new window.JitsiMeetExternalAPI(domain, options);
     */
 
+    const api = jitsiApiRef.current;
     return () => {
-      if (jitsiApiRef.current) {
-        jitsiApiRef.current.dispose();
+      if (api) {
+        api.dispose();
       }
     };
   }, [liveClass.roomName]);

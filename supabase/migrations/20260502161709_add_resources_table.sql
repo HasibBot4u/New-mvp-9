@@ -20,7 +20,8 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Admins have full access" ON resources USING (is_admin());
+    DROP POLICY IF EXISTS "Admins have full access" ON resources;
+CREATE POLICY "Admins have full access" ON resources USING (is_admin());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -28,7 +29,8 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Anyone can read active resources" ON resources FOR SELECT USING (is_active = true);
+    DROP POLICY IF EXISTS "Anyone can read active resources" ON resources;
+CREATE POLICY "Anyone can read active resources" ON resources FOR SELECT USING (is_active = true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Add Index

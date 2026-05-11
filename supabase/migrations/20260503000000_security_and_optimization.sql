@@ -27,23 +27,19 @@ CREATE INDEX IF NOT EXISTS idx_chapters_name_trgm ON chapters USING gin(name gin
 
 -- PART B — DATABASE CONSTRAINTS
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_source_type;
-ALTER TABLE videos ADD CONSTRAINT chk_source_type 
-  CHECK (source_type IN ('telegram', 'drive', 'youtube', 'local'));
+ALTER TABLE videos ADD CONSTRAINT chk_source_type CHECK (source_type IN ('telegram', 'drive', 'youtube', 'local')) NOT VALID;
 
 -- Clean up invalid duration data BEFORE applying constraint
 UPDATE videos SET duration = '00:00:00' WHERE duration !~ '^([0-9]{2}):([0-9]{2}):([0-9]{2})$' OR duration IS NULL;
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_duration_format;
-ALTER TABLE videos ADD CONSTRAINT chk_duration_format 
-  CHECK (duration ~ '^([0-9]{2}):([0-9]{2}):([0-9]{2})$');
+ALTER TABLE videos ADD CONSTRAINT chk_duration_format CHECK (duration ~ '^([0-9]{2}):([0-9]{2}):([0-9]{2})$') NOT VALID;
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_size_positive;
-ALTER TABLE videos ADD CONSTRAINT chk_size_positive 
-  CHECK (size_mb IS NULL OR size_mb >= 0);
+ALTER TABLE videos ADD CONSTRAINT chk_size_positive CHECK (size_mb IS NULL OR size_mb >= 0) NOT VALID;
 
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS chk_display_order;
-ALTER TABLE videos ADD CONSTRAINT chk_display_order 
-  CHECK (display_order >= 0);
+ALTER TABLE videos ADD CONSTRAINT chk_display_order CHECK (display_order >= 0) NOT VALID;
 
 
 -- PART C — NEW TABLES

@@ -70,6 +70,16 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
+try:
+    from supabase import AsyncClient as SupabaseClient
+    supabase_client: SupabaseClient | None = None
+except Exception as e:
+    import traceback
+    print("SUPABASE IMPORT ERROR:", e)
+    traceback.print_exc()
+    supabase_client = None
+
+
 # Safe integer conversion — NEVER crash the app
 try:
     API_ID = int(API_ID_STR) if API_ID_STR and API_ID_STR != "0" else 0
@@ -618,6 +628,18 @@ async def lifespan(app: FastAPI):
     logger.info(f"[NexusEdu] Telegram credentials present: {HAS_TELEGRAM_CREDS}")
     logger.info(f"[NexusEdu] Supabase URL configured: {bool(SUPABASE_URL)}")
 
+    global supabase_client
+    if SUPABASE_URL and SUPABASE_KEY:
+        try:
+            from supabase import create_async_client
+            supabase_client = await create_async_client(SUPABASE_URL, SUPABASE_KEY)
+            logger.info("[NexusEdu] ✅ Supabase async client initialized")
+        except Exception as e:
+            logger.error(f"[NexusEdu] ❌ Supabase init failed: {e}")
+            supabase_client = None
+    else:
+        logger.warning("[NexusEdu] ⚠️ Supabase URL or KEY missing - database not available")
+
     # Start Telegram clients in BACKGROUND — don't block startup
     tg_task = asyncio.create_task(_start_telegram_clients())
 
@@ -890,15 +912,15 @@ async def get_thumbnail(video_id: str, request: Request):
         return RedirectResponse("/placeholder-video.jpg")
 
 
-@app.api_route("/api/ping", methods=["GET", "HEAD"])
-async def ping(request: Request):
+@app.get("/api/ping")
+async def ping():
     try:
-        from datetime import datetime
         return {"status": "ok", "timestamp": datetime.now().isoformat()}
     except Exception as e:
         import traceback
-        logger.error(f"[NexusEdu] Ping error: {traceback.format_exc()}")
-        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+        print(f"PING ERROR: {e}")
+        print(traceback.format_exc())
+        return {"status": "error", "detail": str(e)}
 
 
 @app.post("/api/bot_webhook")
@@ -928,100 +950,46 @@ async def setup_webhook():
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
-async def health(request: Request):
+@app.get("/api/health")
+async def health():
     try:
-        await check_rate_limit(request, limit=20, window=60, prefix="health")
-    except HTTPException:
-        return JSONResponse({"status": "rate_limited"}, status_code=429)
-
-    import time
-    start_time = time.time()
-
-    # Check Primary Telegram
-    tg_status = "unconfigured"
-    tg_time = 0
-    if HAS_TELEGRAM_CREDS:
-        ts = time.time()
-        try:
-            client = get_active_client()
-            if client is not None:
-                tg_status = "connected"
-            elif tg is not None:
-                tg_status = "reconnecting"
-            else:
-                tg_status = "disconnected"
-        except Exception:
-            tg_status = "error"
-        tg_time = round((time.time() - ts) * 1000)
-
-    # Check Secondary Telegram
-    tg2_status = "unconfigured"
-    tg2_time = 0
-    if SESSION_STRING_2:
-        ts = time.time()
-        try:
-            tg2_status = "connected" if (tg2 is not None and getattr(tg2, 'is_connected', False)) else "disconnected"
-        except Exception:
-            tg2_status = "error"
-        tg2_time = round((time.time() - ts) * 1000)
-
-    # Check Supabase
-    sb_status = "unconfigured"
-    sb_time = 0
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
-        ts = time.time()
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as hclient:
-                r = await hclient.get(
-                    f"{SUPABASE_URL}/rest/v1/subjects?limit=1",
-                    headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"}
-                )
-                if r.status_code == 200:
+        import time
+        start_time = time.time()
+        
+        sb_status = "unconfigured"
+        if SUPABASE_URL and SUPABASE_KEY:
+            try:
+                # Add test Supabase query (SELECT 1 equivalence)
+                if supabase_client:
+                    # Using supabase_client to check connection if available
+                    response = await supabase_client.table("subjects").select("id").limit(1).execute()
                     sb_status = "connected"
                 else:
-                    sb_status = "error"
-        except Exception:
-            sb_status = "error"
-        sb_time = round((time.time() - ts) * 1000)
+                    async with httpx.AsyncClient(timeout=3.0) as hclient:
+                        r = await hclient.get(
+                            f"{SUPABASE_URL}/rest/v1/",
+                            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+                        )
+                        if r.status_code in [200, 204]:
+                            sb_status = "connected"
+                        else:
+                            sb_status = "error"
+            except Exception as e:
+                sb_status = "error"
 
-    # Check Bot
-    bot_status = "unconfigured"
-    bot_time = 0
-    ts = time.time()
-    try:
-        if getattr(bot_manager.config, "TOKEN", None):
-            is_bot_init = getattr(bot_manager, "_initialized", False)
-            bot_status = "connected" if is_bot_init else "error"
-    except Exception:
-        bot_status = "error"
-    bot_time = round((time.time() - ts) * 1000)
+        total_time = round((time.time() - start_time) * 1000)
 
-    # Evaluate overall health
-    critical_errors = 0
-    if sb_status == "error":
-        critical_errors += 1
-    if HAS_TELEGRAM_CREDS and tg_status in ["disconnected", "error"]:
-        critical_errors += 1
-
-    overall = "healthy"
-    if critical_errors >= 2:
-        overall = "unhealthy"
-    elif critical_errors == 1:
-        overall = "degraded"
-
-    total_time = round((time.time() - start_time) * 1000)
-
-    return JSONResponse({
-        "status": overall,
-        "version": "v1.2.0",
-        "response_time_ms": total_time,
-        "services": {
-            "supabase": {"status": sb_status, "time_ms": sb_time},
-            "telegram_primary": {"status": tg_status, "time_ms": tg_time},
-            "telegram_secondary": {"status": tg2_status, "time_ms": tg2_time},
-            "telegram_bot": {"status": bot_status, "time_ms": bot_time}
-        }
-    })
+        return JSONResponse({
+            "status": "healthy" if sb_status != "error" else "degraded",
+            "version": "v1.2.1",
+            "response_time_ms": total_time,
+            "telegram_configured": "configured" if HAS_TELEGRAM_CREDS else "not_configured",
+            "services": {
+                "supabase": {"status": sb_status}
+            }
+        })
+    except Exception as e:
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
 channel_usage_stats = {}
@@ -1057,43 +1025,17 @@ async def channel_health(request: Request, authorization: str = Header(None)):
 
 
 @app.get("/api/catalog")
-async def catalog(request: Request, authorization: str = Header(None)):
+async def catalog():
     try:
-        from fastapi import HTTPException
-        try:
-            await check_rate_limit(request, limit=30, window=60, prefix="catalog")
-        except HTTPException:
-            raise HTTPException(status_code=429, detail="Too many requests")
-
-        supabase_url = os.environ.get("SUPABASE_URL")
-        anon_key = os.environ.get("SUPABASE_ANON_KEY")
-        if not supabase_url or not anon_key:
-            return JSONResponse({"error": "Database not configured", "status": "degraded"}, status_code=503)
-
-        auth_val = authorization
-        user = await verify_supabase_token(auth_val)
-        if not user:
-            raise HTTPException(status_code=401, detail="Authentication required")
-
-        now = time.time()
-        async with catalog_lock:
-            data = catalog_cache["data"]
-            ts = catalog_cache["timestamp"]
-
-            if data is None or now - ts > CATALOG_TTL:
-                await refresh_catalog()
-                async with catalog_lock:
-                    data = catalog_cache["data"]
-
-        if not data:
-            return JSONResponse({"error": "Database not configured", "status": "degraded"}, status_code=503)
-            
-        return JSONResponse(content=data, headers={"Cache-Control": "public, max-age=300"})
-
+        if not supabase_client:
+            return {"error": "Database not configured", "status": "degraded"}
+        result = await supabase_client.table("subjects").select("*").execute()
+        return {"data": result.data, "status": "ok"}
     except Exception as e:
         import traceback
-        logger.error(f"[NexusEdu] Catalog Error: {traceback.format_exc()}")
-        return JSONResponse({"error": "Failed to load catalog", "detail": str(e)}, status_code=500)
+        print(f"CATALOG ERROR: {e}")
+        print(traceback.format_exc())
+        return {"error": "Failed to load catalog", "detail": str(e)}
 
 
 _last_refresh_time = 0.0

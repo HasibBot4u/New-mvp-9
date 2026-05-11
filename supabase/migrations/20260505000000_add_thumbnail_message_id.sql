@@ -9,7 +9,7 @@ BEGIN
     WHERE table_name = 'videos' 
     AND column_name = 'thumbnail_telegram_message_id'
   ) THEN
-    ALTER TABLE videos ADD COLUMN thumbnail_telegram_message_id BIGINT;
+    ALTER TABLE videos ADD COLUMN IF NOT EXISTS thumbnail_telegram_message_id BIGINT;
   END IF;
 END $$;
 

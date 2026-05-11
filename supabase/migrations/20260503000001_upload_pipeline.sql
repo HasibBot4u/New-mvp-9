@@ -44,7 +44,8 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Admins have full access" ON upload_queue USING (is_admin());
+    DROP POLICY IF EXISTS "Admins have full access" ON upload_queue;
+CREATE POLICY "Admins have full access" ON upload_queue USING (is_admin());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- RLS for video_variants
@@ -54,7 +55,8 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Anyone can read video variants" ON video_variants FOR SELECT USING (true);
+    DROP POLICY IF EXISTS "Anyone can read video variants" ON video_variants;
+CREATE POLICY "Anyone can read video variants" ON video_variants FOR SELECT USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -64,7 +66,8 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Admins have full access on variants" ON video_variants USING (is_admin());
+    DROP POLICY IF EXISTS "Admins have full access on variants" ON video_variants;
+CREATE POLICY "Admins have full access on variants" ON video_variants USING (is_admin());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 COMMIT;

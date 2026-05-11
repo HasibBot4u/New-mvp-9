@@ -382,7 +382,7 @@ class BotManager:
             if key.endswith("_CHANNEL_ID"):
                 try:
                     cid = int(val.strip())
-                    if cid != 0 and cid not in channels_to_scan:
+                    if cid != 0 and cid not in [c[1] for c in channels_to_scan]:
                         channels_to_scan.append((key, cid))
                 except ValueError:
                     pass
@@ -409,14 +409,10 @@ class BotManager:
                 per_channel[env_key] = {"cid": cid, "videos": 0, "documents": 0, "total": 0, "error": None}
                 
                 try:
-                    # Optional: Verify channel access
-                    # await client.get_chat(cid)
-                    
                     async for msg in client.get_chat_history(cid, limit=100):
                         if not self._scan_running:
                             break
                             
-                        # Media detection
                         media = msg.video or msg.document
                         if media:
                             mime = getattr(media, 'mime_type', '').lower()
@@ -428,39 +424,11 @@ class BotManager:
                                 per_channel[env_key]["videos"] += 1
                                 per_channel[env_key]["total"] += 1
                                 total_videos += 1
-                                
-                                # Add to supabase (videos only)
-                                if getattr(self.config, 'SUPABASE_URL', None) and getattr(self.config, 'SUPABASE_SERVICE_KEY', None):
-                                    import httpx
-                                    size = getattr(media, 'file_size', 0) or 0
-                                    try:
-                                        data = {
-                                            "title": file_name if file_name else f"Video {msg.id}",
-                                            "source_type": "telegram",
-                                            "telegram_channel_id": str(cid),
-                                            "telegram_message_id": msg.id,
-                                            "size_mb": round(size / (1024 * 1024), 2) if size else 0,
-                                            "is_active": False
-                                        }
-                                        async with httpx.AsyncClient(timeout=10.0) as hclient:
-                                            await hclient.post(
-                                                f"{self.config.SUPABASE_URL}/rest/v1/videos",
-                                                headers={
-                                                    "apikey": self.config.SUPABASE_SERVICE_KEY,
-                                                    "Authorization": f"Bearer {self.config.SUPABASE_SERVICE_KEY}",
-                                                    "Content-Type": "application/json",
-                                                    "Prefer": "return=minimal"
-                                                },
-                                                json=data
-                                            )
-                                    except Exception as db_e:
-                                        logger.error(f"Error saving to Supabase for {msg.id}: {db_e}")
                             else:
                                 per_channel[env_key]["documents"] += 1
                                 per_channel[env_key]["total"] += 1
                                 total_documents += 1
                                 
-                        # Progress update every 10 seconds
                         if time.time() - last_update > 10:
                             current_total = total_videos + total_documents
                             progress_text = (
@@ -488,7 +456,6 @@ class BotManager:
             was_cancelled = not self._scan_running
             self._scan_running = False
 
-            # Build final report
             total_items = total_videos + total_documents
             
             report = (

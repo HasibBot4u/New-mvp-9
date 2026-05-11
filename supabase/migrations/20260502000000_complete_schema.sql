@@ -1,3 +1,5 @@
+BEGIN;
+
 -- Complete schema generated for NexusEdu
 
 -- DROP existing functions first to avoid return type change conflicts
@@ -620,3 +622,6 @@ DROP POLICY IF EXISTS "Anyone can read answers" ON qa_answers;
 CREATE POLICY "Anyone can read answers" ON qa_answers FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Users can manage own answers" ON qa_answers;
 CREATE POLICY "Users can manage own answers" ON qa_answers FOR ALL USING (user_id = auth.uid());
+
+
+COMMIT;

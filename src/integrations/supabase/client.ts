@@ -1,18 +1,15 @@
-// Supabase client — points to the real NexusEdu project.
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder';
 
-// Prevent crashing if vars are missing, just warn
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error("Missing Supabase environment variables! VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set.");
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+  console.error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY");
 }
 
-export const supabase = createClient<Database>(
-  SUPABASE_URL || 'https://placeholder-url.supabase.co', 
-  SUPABASE_ANON_KEY || 'placeholder-key', 
+export const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
   {
     auth: {
       storage: localStorage,

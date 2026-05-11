@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
@@ -23,3 +25,6 @@ CREATE POLICY "Users can view own subscriptions" ON subscriptions
 ALTER TABLE enrollment_codes ADD COLUMN IF NOT EXISTS batch_id TEXT;
 ALTER TABLE enrollment_codes ADD COLUMN IF NOT EXISTS scope TEXT DEFAULT 'chapter'; -- 'chapter', 'subject', 'platform'
 ALTER TABLE enrollment_codes ADD COLUMN IF NOT EXISTS generated_by UUID REFERENCES profiles(id);
+
+
+COMMIT;

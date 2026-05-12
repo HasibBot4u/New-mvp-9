@@ -324,6 +324,20 @@ export default function PlayerPage() {
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
             />
+          ) : source.type === "telegram" && !sessionToken ? (
+            <div className="absolute inset-0 flex items-center justify-center p-6 bg-black z-20">
+              <div className="rounded-2xl glass-strong border border-border p-8 max-w-md text-center">
+                <p className="font-bangla text-white mb-3 text-lg">
+                  Please log in to watch this video.
+                </p>
+                <Button 
+                  onClick={() => nav('/login')} 
+                  className="rounded-full bg-primary hover:bg-primary-glow shadow-glow mt-4"
+                >
+                  লগইন করুন
+                </Button>
+              </div>
+            </div>
           ) : errored ? (
             <div className="absolute inset-0 flex items-center justify-center p-6 bg-black z-20">
               <div className="rounded-2xl glass-strong border border-border p-8 max-w-md text-center">

@@ -30,6 +30,13 @@ interface AuthState {
 
 const AuthCtx = createContext<AuthState | undefined>(undefined);
 
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, operationName = "Operation"): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)), timeoutMs))
+  ]);
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -37,76 +44,120 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchProfile = useCallback(async (u: User): Promise<Profile | null> => {
-    const sb = supabase as any;
-    const { data } = await sb.from("profiles").select("*").eq("id", u.id).maybeSingle();
-    const base: Profile = data
-      ? { ...(data as any) }
-      : {
-          id: u.id,
-          email: u.email ?? "",
-          display_name: u.user_metadata?.display_name || u.email?.split("@")[0] || "Student",
-          role: 'user',
-          is_blocked: false,
-        };
+    try {
+      const sb = supabase as any;
+      const result: any = await withTimeout(
+        sb.from("profiles").select("*").eq("id", u.id).maybeSingle(),
+        10000,
+        "fetchProfile DB query"
+      );
+      const data = result?.data;
+      const base: Profile = data
+        ? { ...(data as any) }
+        : {
+            id: u.id,
+            email: u.email ?? "",
+            display_name: u.user_metadata?.display_name || u.email?.split("@")[0] || "Student",
+            role: 'user',
+            is_blocked: false,
+          };
 
-    if (!base.role) base.role = 'user';
+      if (!base.role) base.role = 'user';
 
-    return base;
+      return base;
+    } catch (e) {
+      console.error("fetchProfile error:", e);
+      return null;
+    }
   }, []);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        (async () => {
-          const p = await fetchProfile(s.user);
-          setProfile(p);
-          if (p?.is_blocked) {
-            await supabase.auth.signOut();
-            setProfile(null);
-          }
-        })();
-      } else {
-        setProfile(null);
-      }
-    });
+    let sub: any = null;
+    try {
+      const { data } = supabase.auth.onAuthStateChange((_event, s) => {
+        setSession(s);
+        setUser(s?.user ?? null);
+        if (s?.user) {
+          (async () => {
+            try {
+              const p = await fetchProfile(s.user);
+              setProfile(p);
+              if (p?.is_blocked) {
+                await supabase.auth.signOut();
+                setProfile(null);
+              }
+            } catch (e) {
+              console.error("onAuthStateChange profile fetch error:", e);
+            }
+          })();
+        } else {
+          setProfile(null);
+        }
+      });
+      sub = data;
+    } catch (e) {
+      console.error("onAuthStateChange setup error:", e);
+    }
 
-    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        const p = await fetchProfile(s.user);
+    withTimeout(supabase.auth.getSession(), 10000, "getSession")
+      .then(async (result: any) => {
+        const s = result?.data?.session;
+        setSession(s);
+        setUser(s?.user ?? null);
+        if (s?.user) {
+          try {
+            const p = await fetchProfile(s.user);
+            setProfile(p);
+            if (p?.is_blocked) {
+              await supabase.auth.signOut();
+              setProfile(null);
+            }
+          } catch (e) {
+            console.error("getSession profile fetch error:", e);
+          }
+        }
+        setIsLoading(false);
+      })
+      .catch((e) => {
+        console.error("getSession error:", e);
+        setIsLoading(false);
+      });
+
+    return () => {
+      if (sub && sub.subscription) {
+        sub.subscription.unsubscribe();
+      }
+    };
+  }, [fetchProfile]);
+
+  const signIn: AuthState["signIn"] = async (email, password) => {
+    try {
+      const result: any = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        10000,
+        "signInWithPassword"
+      );
+      const { data, error } = result;
+      if (error) return { error: error.message };
+      if (data?.user) {
+        const p = await fetchProfile(data.user);
         setProfile(p);
         if (p?.is_blocked) {
           await supabase.auth.signOut();
           setProfile(null);
+          return { error: "Your account has been blocked. Contact support." };
         }
+        (supabase as any).from("activity_logs").insert({
+          user_id: data.user.id,
+          action: "login",
+          details: { email: data.user.email },
+        }).then(() => {}, () => {});
       }
-      setIsLoading(false);
-    });
-
-    return () => sub.subscription.unsubscribe();
-  }, [fetchProfile]);
-
-  const signIn: AuthState["signIn"] = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
-    if (data.user) {
-      const p = await fetchProfile(data.user);
-      setProfile(p);
-      if (p?.is_blocked) {
-        await supabase.auth.signOut();
-        setProfile(null);
-        return { error: "Your account has been blocked. Contact support." };
-      }
-      (supabase as any).from("activity_logs").insert({
-        user_id: data.user.id,
-        action: "login",
-        details: { email: data.user.email },
-      }).then(() => {}, () => {});
+      return { error: null };
+    } catch (e: any) {
+      console.error("signIn error:", e);
+      return { error: e?.message || "Sign in failed due to timeout or network error" };
     }
-    return { error: null };
   };
 
   const signUp: AuthState["signUp"] = async (email, password, displayName) => {

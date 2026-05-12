@@ -20,7 +20,14 @@ class SecretsManager:
         self._secrets['supabase_url'] = os.environ.get("SUPABASE_URL", "")
         self._secrets['supabase_service_key'] = os.environ.get("SUPABASE_SERVICE_KEY", "")
         self._secrets['supabase_anon_key'] = os.environ.get("SUPABASE_ANON_KEY", "")
-        self._secrets['admin_token'] = os.environ.get("ADMIN_TOKEN", secrets.token_hex(32))
+        
+        admin_token = os.environ.get("ADMIN_TOKEN")
+        if not admin_token:
+            raise ValueError("ADMIN_TOKEN environment variable is required. Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'")
+        if len(admin_token) < 32:
+            raise ValueError("ADMIN_TOKEN must be at least 32 characters long.")
+        # This token must be persistent across restarts to ensure admin signatures remain valid
+        self._secrets['admin_token'] = admin_token
 
     def get_secret(self, key: str) -> str:
         return self._secrets.get(key, "")

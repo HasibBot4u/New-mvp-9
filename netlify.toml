@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  PYTHON_VERSION = "3.8"
+  NETLIFY_BUILD_DEBUG = "false"
 
 [[redirects]]
   from = "/*"

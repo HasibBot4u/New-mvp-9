@@ -1,3 +1,4 @@
+import os
 import time
 import asyncio
 from typing import Optional
@@ -14,8 +15,26 @@ class DistributedRateLimiter:
     def __init__(self, use_redis: bool = True):
         self._memory_store = {}
         self.redis_client = None
-        if use_redis and REDIS_AVAILABLE:    
-            self.redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        if use_redis and REDIS_AVAILABLE:
+            redis_url = os.environ.get("REDIS_URL")
+            if redis_url:
+                self.redis_client = redis.from_url(redis_url, decode_responses=True)
+            else:
+                import logging
+                logging.warning("REDIS_URL environment variable is not set. Using localhost fallback.")
+                self.redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            
+            # Fire-and-forget connection test
+            asyncio.create_task(self._test_connection())
+            
+    async def _test_connection(self):
+        if self.redis_client:
+            try:
+                await self.redis_client.ping()
+            except Exception as e:
+                import logging
+                logging.warning(f"Redis connection failed: {e}. Falling back to in-memory rate limiting.")
+                self.redis_client = None
             
     async def is_rate_limited(self, key: str, limit: int, window: int) -> bool:
         if self.redis_client:

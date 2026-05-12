@@ -950,7 +950,6 @@ async def setup_webhook():
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
-@app.get("/api/health")
 async def health():
     try:
         import time
@@ -958,13 +957,15 @@ async def health():
         
         sb_status = "unconfigured"
         if SUPABASE_URL and SUPABASE_KEY:
-            try:
-                # Add test Supabase query (SELECT 1 equivalence)
-                if supabase_client:
+            if supabase_client is not None:
+                try:
                     # Using supabase_client to check connection if available
                     response = await supabase_client.table("subjects").select("id").limit(1).execute()
                     sb_status = "connected"
-                else:
+                except Exception as e:
+                    sb_status = "error"
+            else:
+                try:
                     async with httpx.AsyncClient(timeout=3.0) as hclient:
                         r = await hclient.get(
                             f"{SUPABASE_URL}/rest/v1/",
@@ -974,8 +975,8 @@ async def health():
                             sb_status = "connected"
                         else:
                             sb_status = "error"
-            except Exception as e:
-                sb_status = "error"
+                except Exception as e:
+                    sb_status = "error"
 
         total_time = round((time.time() - start_time) * 1000)
 
@@ -989,7 +990,7 @@ async def health():
             }
         })
     except Exception as e:
-        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+        return JSONResponse({"status": "degraded", "detail": str(e)}, status_code=200)
 
 
 channel_usage_stats = {}
@@ -1027,15 +1028,21 @@ async def channel_health(request: Request, authorization: str = Header(None)):
 @app.get("/api/catalog")
 async def catalog():
     try:
-        if not supabase_client:
-            return {"error": "Database not configured", "status": "degraded"}
-        result = await supabase_client.table("subjects").select("*").execute()
-        return {"data": result.data, "status": "ok"}
+        import time
+        now = time.time()
+        if catalog_cache.get("data") and (now - catalog_cache.get("timestamp", 0) < 300):
+            return {"data": catalog_cache["data"], "status": "ok"}
+            
+        success = await refresh_catalog()
+        if success:
+            return {"data": catalog_cache["data"], "status": "ok"}
+        else:
+             return JSONResponse({"error": "Catalog unavailable", "detail": "Failed to refresh catalog"}, status_code=503)
     except Exception as e:
         import traceback
         print(f"CATALOG ERROR: {e}")
         print(traceback.format_exc())
-        return {"error": "Failed to load catalog", "detail": str(e)}
+        return JSONResponse({"error": "Catalog unavailable", "detail": str(e)}, status_code=503)
 
 
 _last_refresh_time = 0.0

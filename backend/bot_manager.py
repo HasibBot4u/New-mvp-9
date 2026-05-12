@@ -292,11 +292,70 @@ class BotManager:
             return
 
         try:
-            # Basic stats - extend with Supabase queries as needed
+            from backend.main import supabase_client, catalog_cache, get_active_client
+            import psutil
+            import os
+            
+            # Sub queries
+            users = "N/A"
+            videos = "N/A"
+            subjects = "N/A"
+            chapters = "N/A"
+            today_videos = "N/A"
+            most_watched = "N/A"
+            
+            if supabase_client:
+                try:
+                    u_count = await supabase_client.table('profiles').select('id', count='exact').limit(1).execute()
+                    users = u_count.count if hasattr(u_count, 'count') else "Error"
+                    
+                    v_count = await supabase_client.table('videos').select('id', count='exact').limit(1).execute()
+                    videos = v_count.count if hasattr(v_count, 'count') else "Error"
+                    
+                    s_count = await supabase_client.table('subjects').select('id', count='exact').limit(1).execute()
+                    subjects = s_count.count if hasattr(s_count, 'count') else "Error"
+                    
+                    c_count = await supabase_client.table('chapters').select('id', count='exact').limit(1).execute()
+                    chapters = c_count.count if hasattr(c_count, 'count') else "Error"
+                    
+                    # 24h videos
+                    from datetime import datetime, timedelta
+                    yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+                    v_today = await supabase_client.table('videos').select('id', count='exact').gte('created_at', yesterday).limit(1).execute()
+                    today_videos = v_today.count if hasattr(v_today, 'count') else "Error"
+                    
+                    # most watched
+                    mv = await supabase_client.table('videos').select('title, views').order('views', desc=True).limit(1).execute()
+                    if mv.data and len(mv.data) > 0:
+                        most_watched = f"{mv.data[0].get('title', 'Unknown')} ({mv.data[0].get('views', 0)} views)"
+                except Exception as e:
+                    logger.error(f"Stats subquery error: {e}")
+            
+            client_status = "✅ Connected" if get_active_client() else "❌ Disconnected"
+            
+            try:
+                mem = psutil.virtual_memory()
+                mem_used = f"{mem.percent}%"
+            except ImportError:
+                mem_used = "N/A (psutil not installed)"
+            
+            c_len = len(catalog_cache.get('data', {})) if catalog_cache.get('data') else 0
+            from datetime import datetime
+            c_time = datetime.fromtimestamp(catalog_cache.get('timestamp', 0)).strftime('%H:%M:%S') if catalog_cache.get('timestamp') else "Never"
+            
             stats_text = (
                 f"📈 <b>Platform Statistics</b>\n\n"
-                f"Bot Uptime: Initialized\n"
+                f"👥 <b>Users:</b> {users}\n"
+                f"📚 <b>Subjects:</b> {subjects}\n"
+                f"📑 <b>Chapters:</b> {chapters}\n"
+                f"🎥 <b>Videos:</b> {videos}\n"
+                f"🆕 <b>Added Today:</b> {today_videos}\n"
+                f"🔥 <b>Most Watched:</b> {most_watched}\n\n"
+                f"🤖 <b>Bot / System</b>\n"
+                f"Telegram Client: {client_status}\n"
                 f"Webhook Active: {self._webhook_set}\n"
+                f"Ram Usage: {mem_used}\n"
+                f"Catalog Cache: {c_len} items (updated {c_time})\n"
                 f"Admin Count: {len(self.config.ADMIN_IDS)}\n"
                 f"Timestamp: {datetime.now().isoformat()}"
             )
@@ -321,8 +380,52 @@ class BotManager:
             return
 
         message = " ".join(args)
-        await update.message.reply_text(f"📢 Notification sent: {message}")
-        # TODO: Implement actual broadcast logic
+        if len(message) > 4000:
+            await update.message.reply_text("❌ Message too long (max 4000 chars).")
+            return
+
+        import os
+        channels = [v for k, v in os.environ.items() if k.endswith("_CHANNEL_ID")]
+        channels = list(set(channels)) # unique
+        
+        status_msg = await update.message.reply_text(f"📢 Sending notification to {len(channels)} channels...")
+        
+        success = 0
+        failed = 0
+        from telegram.error import FloodWait
+        import asyncio
+        
+        for cid_str in channels:
+            try:
+                channel_id = int(cid_str)
+                if channel_id == 0:
+                    continue
+                await self.application.bot.send_message(
+                    chat_id=channel_id,
+                    text=message,
+                    parse_mode='HTML'
+                )
+                success += 1
+            except FloodWait as e:
+                await asyncio.sleep(e.retry_after + 1)
+                try:
+                    await self.application.bot.send_message(chat_id=channel_id, text=message, parse_mode='HTML')
+                    success += 1
+                except Exception:
+                    failed += 1
+            except Exception as e:
+                logger.error(f"[BotManager] Failed to notify {cid_str}: {e}")
+                failed += 1
+            
+            await asyncio.sleep(1) # rate limiting
+            
+        await status_msg.edit_text(
+            f"📢 <b>Notification Complete</b>\n\n"
+            f"Sent to: {success}\n"
+            f"Failed: {failed}\n\n"
+            f"Message:\n{message}",
+            parse_mode='HTML'
+        )
 
     async def cmd_scan_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /scan_cancel command - ADMIN ONLY"""

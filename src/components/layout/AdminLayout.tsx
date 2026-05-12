@@ -38,21 +38,9 @@ export function AdminLayout() {
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        if (mounted) nav("/login");
-        return;
+      if (!session && mounted) {
+        nav("/login");
       }
-      fetch(`${API_BASE}/api/admin/verify`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${session.access_token}` },
-      })
-      .then(r => r.json())
-      .then(d => {
-        if (mounted && !d.is_admin) nav("/dashboard");
-      })
-      .catch(() => {
-        if (mounted) nav("/dashboard");
-      });
     });
     return () => { mounted = false; };
   }, [nav]);

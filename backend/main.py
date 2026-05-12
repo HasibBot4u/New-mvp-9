@@ -1033,11 +1033,11 @@ async def catalog():
         if catalog_cache.get("data") and (now - catalog_cache.get("timestamp", 0) < 300):
             return {"data": catalog_cache["data"], "status": "ok"}
             
-        success = await refresh_catalog()
-        if success:
+        await refresh_catalog()
+        if catalog_cache.get("data"):
             return {"data": catalog_cache["data"], "status": "ok"}
         else:
-             return JSONResponse({"error": "Catalog unavailable", "detail": "Failed to refresh catalog"}, status_code=503)
+             return JSONResponse({"error": "Catalog unavailable", "detail": "No data in cache"}, status_code=503)
     except Exception as e:
         import traceback
         print(f"CATALOG ERROR: {e}")

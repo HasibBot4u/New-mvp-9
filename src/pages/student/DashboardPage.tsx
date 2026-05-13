@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCatalog } from "@/contexts/CatalogContext";
 import { format } from "date-fns";
+import { logActivity } from "@/lib/activityLogger";
 
 const IconMap: Record<string, React.ElementType> = {
   Atom: Atom,
@@ -62,6 +63,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) return;
+    logActivity("page_view", { page: "dashboard" });
     (async () => {
       // Stats
       const [hist, cw, ann, live] = await Promise.all([

@@ -24,10 +24,8 @@ class Analytics {
     console.log('[Analytics] Identified user', userId, traits);
   }
 
-  track(eventName: EventName | string, properties?: EventProperties) {
+  async track(eventName: EventName | string, properties?: EventProperties) {
     if (!this.isInitialized) this.init();
-    
-    // Custom backend tracking (mock for now)
     
     // GA4 tracking
     if (typeof window !== 'undefined' && 'gtag' in window) {
@@ -35,6 +33,26 @@ class Analytics {
     }
     
     console.log(`[Analytics] Tracked: ${eventName}`, properties);
+
+    // Backend tracking
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      if (token) {
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
+        await fetch(`${baseUrl}/api/activity`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ action: eventName, details: properties || {} })
+        });
+      }
+    } catch (e) {
+      // Ignore background errors
+    }
   }
 }
 

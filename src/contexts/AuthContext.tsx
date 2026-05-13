@@ -28,6 +28,8 @@ interface AuthState {
   refresh: () => Promise<void>;
 }
 
+import { logActivity } from "@/lib/activityLogger";
+
 const AuthCtx = createContext<AuthState | undefined>(undefined);
 
 const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, operationName = "Operation"): Promise<T> => {
@@ -147,11 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           return { error: "Your account has been blocked. Contact support." };
         }
-        (supabase as any).from("activity_logs").insert({
-          user_id: data.user.id,
-          action: "login",
-          details: { email: data.user.email },
-        }).then(() => {}, () => {});
+        await logActivity("login", { email: data.user.email, device: navigator.userAgent });
       }
       return { error: null };
     } catch (e: any) {
@@ -175,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut: AuthState["signOut"] = async () => {
+    await logActivity("logout", {});
     await supabase.auth.signOut();
     setProfile(null);
   };

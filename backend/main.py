@@ -1026,7 +1026,11 @@ async def channel_health(request: Request, authorization: str = Header(None)):
 
 
 @app.get("/api/catalog")
-async def catalog():
+async def catalog(request: Request, authorization: str = Header(None)):
+    user = await verify_supabase_token(authorization) if authorization else None
+    user_id = user.get("sub") or user.get("id") if user else None
+    if user_id:
+        asyncio.create_task(internal_log_activity(user_id, "catalog_view", {}, request))
     try:
         import time
         now = time.time()
@@ -1207,6 +1211,7 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
         raise HTTPException(status_code=400, detail="Invalid video ID format")
 
     await check_rate_limit(request, limit=120, window=60, prefix="stream")
+    asyncio.create_task(internal_log_activity(user_id, "stream_start", {"video_id": video_id}, request))
 
     try:
         if video_id not in video_map:
@@ -1324,6 +1329,50 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
         logger.info(f"[NexusEdu] Stream endpoint error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+
+async def internal_log_activity(user_id: str, action: str, details: dict, request: Request):
+    if not user_id: return
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent", "")
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        if not supabase_url or not supabase_key: return
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(
+                f"{supabase_url}/rest/v1/activity_logs",
+                headers={
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal"
+                },
+                json={
+                    "user_id": user_id,
+                    "action": action,
+                    "details": details,
+                    "ip_address": client_ip,
+                    "user_agent": user_agent
+                }
+            )
+    except Exception as e:
+        logger.error(f"[Activity] Internal log failed: {e}")
+
+class ActivityLogReq(BaseModel):
+    action: constr(min_length=1, max_length=50)
+    details: dict = {}
+
+@app.post("/api/activity")
+async def log_activity(req: ActivityLogReq, request: Request, authorization: str = Header(None)):
+    user = await verify_supabase_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    user_id = user.get("sub") or user.get("id")
+    await check_rate_limit(request, limit=100, window=60, prefix=f"activity_{user_id}")
+    
+    asyncio.create_task(internal_log_activity(user_id, req.action, req.details, request))
+    return {"status": "ok"}
 
 class DeleteUserReq(BaseModel):
     user_id: constr(min_length=36, max_length=36)

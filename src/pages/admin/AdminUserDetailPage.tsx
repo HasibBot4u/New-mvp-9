@@ -260,8 +260,23 @@ export default function AdminUserDetailPage() {
                   {Array.from({ length: 12 }).map((_, weekIndex) => (
                     <div key={weekIndex} className="flex flex-col gap-1 shrink-0">
                       {Array.from({ length: 7 }).map((_, dayIndex) => {
-                        // Randomize activity for visual representation
-                        const activeLevel = Math.floor(Math.random() * 5); 
+                        const cellDayIndex = weekIndex * 7 + dayIndex;
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const startDate = new Date(today.getTime() - (83 * 24 * 60 * 60 * 1000));
+                        
+                        let count = 0;
+                        [...activityLogs, ...watchHistory].forEach(item => {
+                          const dateStr = item.created_at || item.watched_at;
+                          if (dateStr) {
+                            const d = new Date(dateStr);
+                            d.setHours(0, 0, 0, 0);
+                            const diffDays = Math.floor((d.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                            if (diffDays === cellDayIndex) count++;
+                          }
+                        });
+
+                        const activeLevel = count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : count <= 8 ? 3 : 4;
                         const bgClasses = [
                           "bg-white/5", // 0
                           "bg-primary/30", // 1
@@ -273,7 +288,7 @@ export default function AdminUserDetailPage() {
                           <div 
                             key={dayIndex} 
                             className={`w-4 h-4 rounded-sm ${bgClasses[activeLevel]} transition-colors hover:ring-1 hover:ring-primary`} 
-                            title={`${activeLevel * 15} mins studied`}
+                            title={`${count} activities`}
                           />
                         );
                       })}

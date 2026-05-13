@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useBatchProgress } from "@/hooks/useBatchProgress";
 import { trackEvent } from "@/lib/analytics";
+import { logActivity } from "@/lib/activityLogger";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
@@ -379,13 +380,19 @@ export default function PlayerPage() {
                   const dur = e.currentTarget.duration;
                   if (!isNaN(dur)) setDuration(dur);
                   trackEvent("video_play", { video_id: video.id, title: video.title });
+                  logActivity("video_start", { video_id: video.id, title: video.title });
                 }}
                 onTimeUpdate={(e) => {
                   updateProgress(video.id, e.currentTarget.currentTime, duration);
                 }}
-                onPause={() => flush()}
+                onPause={() => {
+                  trackEvent("video_pause", { video_id: video.id, title: video.title, timestamp: videoRef.current?.currentTime });
+                  logActivity("video_pause", { video_id: video.id, timestamp: videoRef.current?.currentTime });
+                  flush();
+                }}
                 onEnded={() => {
                   trackEvent("video_complete", { video_id: video.id, title: video.title });
+                  logActivity("video_complete", { video_id: video.id, duration });
                   handleVideoEnded();
                 }}
                 onError={(e) => {

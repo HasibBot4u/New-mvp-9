@@ -83,6 +83,7 @@ const AdminLivePage = lazy(() => import("./pages/admin/AdminLivePage"));
 const AdminLogsPage = lazy(() => import("./pages/admin/AdminLogsPage"));
 const AdminSystemPage = lazy(() => import("./pages/admin/AdminSystemPage"));
 const AdminEnrollmentPage = lazy(() => import("./pages/admin/AdminEnrollmentPage"));
+const AdminUserDetailPage = lazy(() => import("./pages/admin/AdminUserDetailPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -167,6 +168,7 @@ const AppContent = () => {
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
           <Route path="/admin/content" element={<AdminContentPage />} />
           <Route path="/admin/announcements" element={<AdminAnnouncementsPage />} />
           <Route path="/admin/live" element={<AdminLivePage />} />

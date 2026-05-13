@@ -8,6 +8,16 @@ const THUMBNAILS_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_STATIC).then((cache) => {
+      // Pre-cache app shell
+      return cache.addAll([
+        '/',
+        '/index.html',
+        '/manifest.json'
+      ]);
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -115,5 +125,37 @@ self.addEventListener('fetch', (event) => {
   // Default: Network First
   event.respondWith(
     fetch(event.request).catch(() => caches.match(event.request))
+  );
+});
+
+self.addEventListener('push', (event) => {
+  const data = event.data ? event.data.json() : {};
+  const title = data.title || 'New Notification';
+  const options = {
+    body: data.body || 'You have a new message.',
+    icon: '/nexusedu-icon.svg',
+    badge: '/nexusedu-icon.svg',
+    data: data.data || {}
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = event.notification.data.url || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
   );
 });

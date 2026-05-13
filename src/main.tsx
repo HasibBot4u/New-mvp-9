@@ -2,6 +2,7 @@ import ReactDOM from 'react-dom/client';
 import { HelmetProvider } from 'react-helmet-async';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ThemeProvider } from './components/ThemeProvider';
 import './index.css';
 
 if ('serviceWorker' in navigator) {
@@ -23,10 +24,19 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+export let deferredPrompt: any;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  window.dispatchEvent(new CustomEvent('pwa-prompt-available', { detail: e }));
+});
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <HelmetProvider>
-      <App />
+      <ThemeProvider defaultTheme="system" storageKey="nexusedu-theme">
+        <App />
+      </ThemeProvider>
     </HelmetProvider>
   </ErrorBoundary>
 );

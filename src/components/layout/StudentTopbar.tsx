@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,
@@ -62,6 +63,7 @@ export function StudentTopbar() {
         </div>
 
         <div className="flex items-center gap-1">
+          <ThemeToggle />
           <Button variant="ghost" size="icon" asChild className="rounded-full hover:bg-background-overlay">
             <Link to="/search" aria-label="Search"><Search className="w-5 h-5" /></Link>
           </Button>

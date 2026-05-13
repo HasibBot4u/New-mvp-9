@@ -9,12 +9,14 @@ export function SubjectModal({ isOpen, onClose, onSave, defaultValues }: any) {
   const [nameBn, setNameBn] = useState(defaultValues?.name_bn || "");
   const [icon, setIcon] = useState(defaultValues?.icon || '📚');
   const [color, setColor] = useState(defaultValues?.color || '#FF2E55');
+  const [displayOrder, setDisplayOrder] = useState(defaultValues?.display_order || 0);
+  const [isActive, setIsActive] = useState(defaultValues?.is_active ?? true);
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
     if (!name) return;
     const slug = name.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    onSave({ name, name_bn: nameBn, slug, icon, color });
+    onSave({ name, name_bn: nameBn, slug, icon, color, display_order: parseInt(displayOrder), is_active: isActive });
     onClose();
   };
 
@@ -27,6 +29,11 @@ export function SubjectModal({ isOpen, onClose, onSave, defaultValues }: any) {
           <div><Label htmlFor="s-namebn">Bengali Name (Optional)</Label><Input id="s-namebn" value={nameBn} onChange={e => setNameBn(e.target.value)} /></div>
           <div><Label htmlFor="s-icon">Icon (Emoji)</Label><Input id="s-icon" value={icon} onChange={e => setIcon(e.target.value)} /></div>
           <div><Label htmlFor="s-color">Hex Color</Label><Input id="s-color" value={color} onChange={e => setColor(e.target.value)} /></div>
+          <div><Label htmlFor="s-order">Display Order</Label><Input id="s-order" type="number" value={displayOrder} onChange={e => setDisplayOrder(e.target.value)} /></div>
+          <div className="flex items-center space-x-2">
+            <input type="checkbox" id="s-active" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+            <Label htmlFor="s-active">Is Active</Label>
+          </div>
           <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
       </DialogContent>
@@ -37,10 +44,13 @@ export function SubjectModal({ isOpen, onClose, onSave, defaultValues }: any) {
 export function CycleModal({ isOpen, onClose, onSave, defaultValues }: any) {
   const [name, setName] = useState(defaultValues?.name || "");
   const [nameBn, setNameBn] = useState(defaultValues?.name_bn || "");
+  const [displayOrder, setDisplayOrder] = useState(defaultValues?.display_order || 0);
+  const [isActive, setIsActive] = useState(defaultValues?.is_active ?? true);
+
   const handleSubmit = (e: any) => {
     e.preventDefault();
     if (!name) return;
-    onSave({ name, name_bn: nameBn });
+    onSave({ name, name_bn: nameBn, display_order: parseInt(displayOrder), is_active: isActive });
     onClose();
   };
   return (
@@ -50,6 +60,11 @@ export function CycleModal({ isOpen, onClose, onSave, defaultValues }: any) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><Label htmlFor="cy-name">Name</Label><Input id="cy-name" value={name} onChange={e => setName(e.target.value)} required /></div>
           <div><Label htmlFor="cy-namebn">Bengali Name</Label><Input id="cy-namebn" value={nameBn} onChange={e => setNameBn(e.target.value)} /></div>
+          <div><Label htmlFor="cy-order">Display Order</Label><Input id="cy-order" type="number" value={displayOrder} onChange={e => setDisplayOrder(e.target.value)} /></div>
+          <div className="flex items-center space-x-2">
+            <input type="checkbox" id="cy-active" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+            <Label htmlFor="cy-active">Is Active</Label>
+          </div>
           <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
       </DialogContent>
@@ -62,11 +77,13 @@ export function ChapterModal({ isOpen, onClose, onSave, defaultValues }: any) {
   const [nameBn, setNameBn] = useState(defaultValues?.name_bn || "");
   const [desc, setDesc] = useState(defaultValues?.description || "");
   const [requires, setRequires] = useState(defaultValues?.requires_enrollment || false);
+  const [displayOrder, setDisplayOrder] = useState(defaultValues?.display_order || 0);
+  const [isActive, setIsActive] = useState(defaultValues?.is_active ?? true);
   
   const handleSubmit = (e: any) => {
     e.preventDefault();
     if (!name) return;
-    onSave({ name, name_bn: nameBn, description: desc, requires_enrollment: requires });
+    onSave({ name, name_bn: nameBn, description: desc, requires_enrollment: requires, display_order: parseInt(displayOrder), is_active: isActive });
     onClose();
   };
   return (
@@ -77,9 +94,16 @@ export function ChapterModal({ isOpen, onClose, onSave, defaultValues }: any) {
           <div><Label htmlFor="ch-name">Name</Label><Input id="ch-name" value={name} onChange={e => setName(e.target.value)} required /></div>
           <div><Label htmlFor="ch-namebn">Bengali Name</Label><Input id="ch-namebn" value={nameBn} onChange={e => setNameBn(e.target.value)} /></div>
           <div><Label htmlFor="ch-desc">Description</Label><Input id="ch-desc" value={desc} onChange={e => setDesc(e.target.value)} /></div>
-          <div className="flex items-center space-x-2">
-            <input type="checkbox" id="req" checked={requires} onChange={e => setRequires(e.target.checked)} />
-            <Label htmlFor="req">Requires Enrollment Code</Label>
+          <div><Label htmlFor="ch-order">Display Order</Label><Input id="ch-order" type="number" value={displayOrder} onChange={e => setDisplayOrder(e.target.value)} /></div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center space-x-2">
+              <input type="checkbox" id="req" checked={requires} onChange={e => setRequires(e.target.checked)} />
+              <Label htmlFor="req">Requires Enrollment Code</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input type="checkbox" id="ch-active" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+              <Label htmlFor="ch-active">Is Active</Label>
+            </div>
           </div>
           <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
@@ -99,11 +123,17 @@ export function VideoModal({ isOpen, onClose, onSave, defaultValues }: any) {
   const [duration, setDuration] = useState(defaultValues?.duration || "00:00");
   const [size, setSize] = useState(defaultValues?.size_mb || "");
   const [thumb, setThumb] = useState(defaultValues?.thumbnail_url || "");
+  const [displayOrder, setDisplayOrder] = useState(defaultValues?.display_order || 0);
+  const [isActive, setIsActive] = useState(defaultValues?.is_active ?? true);
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
     if (!title) return;
-    const payload: any = { title, title_bn: titleBn, source_type: sourceType, duration, thumbnail_url: thumb, size_mb: size ? parseInt(size) : null };
+    const payload: any = { 
+      title, title_bn: titleBn, source_type: sourceType, duration, 
+      thumbnail_url: thumb, size_mb: size ? parseInt(size) : null,
+      display_order: parseInt(displayOrder), is_active: isActive 
+    };
     if (sourceType === 'telegram') {
       payload.telegram_channel_id = channelId || null;
       payload.telegram_message_id = msgId ? parseInt(msgId) : null;
@@ -123,13 +153,16 @@ export function VideoModal({ isOpen, onClose, onSave, defaultValues }: any) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><Label htmlFor="v-title">Title</Label><Input id="v-title" value={title} onChange={e => setTitle(e.target.value)} required /></div>
           <div><Label htmlFor="v-titlebn">Bengali Title</Label><Input id="v-titlebn" value={titleBn} onChange={e => setTitleBn(e.target.value)} /></div>
-          <div>
-            <Label htmlFor="v-type">Source Type</Label>
-            <select id="v-type" value={sourceType} onChange={e => setSourceType(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <option value="telegram">Telegram</option>
-              <option value="youtube">YouTube</option>
-              <option value="drive">Google Drive</option>
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="v-type">Source Type</Label>
+              <select id="v-type" value={sourceType} onChange={e => setSourceType(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1">
+                <option value="telegram">Telegram</option>
+                <option value="youtube">YouTube</option>
+                <option value="drive">Google Drive</option>
+              </select>
+            </div>
+            <div><Label htmlFor="v-order">Display Order</Label><Input id="v-order" type="number" value={displayOrder} onChange={e => setDisplayOrder(e.target.value)} className="mt-1" /></div>
           </div>
           {sourceType === 'telegram' && (
             <>
@@ -139,12 +172,18 @@ export function VideoModal({ isOpen, onClose, onSave, defaultValues }: any) {
           )}
           {sourceType === 'youtube' && <div><Label htmlFor="v-yt">YouTube URL or ID</Label><Input id="v-yt" value={ytId} onChange={e => setYtId(e.target.value)} /></div>}
           {sourceType === 'drive' && <div><Label htmlFor="v-drive">Drive File ID</Label><Input id="v-drive" value={driveId} onChange={e => setDriveId(e.target.value)} /></div>}
-          <div><Label htmlFor="v-dur">Duration (MM:SS)</Label><Input id="v-dur" value={duration} onChange={e => setDuration(e.target.value)} /></div>
-          <div><Label htmlFor="v-size">Size (MB)</Label><Input id="v-size" type="number" value={size} onChange={e => setSize(e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label htmlFor="v-dur">Duration (MM:SS)</Label><Input id="v-dur" value={duration} onChange={e => setDuration(e.target.value)} className="mt-1" /></div>
+            <div><Label htmlFor="v-size">Size (MB)</Label><Input id="v-size" type="number" value={size} onChange={e => setSize(e.target.value)} className="mt-1" /></div>
+          </div>
           <div>
             <Label htmlFor="v-thumb">Thumbnail URL</Label>
-            <Input id="v-thumb" value={thumb} onChange={e => setThumb(e.target.value)} placeholder="https://..." />
+            <Input id="v-thumb" value={thumb} onChange={e => setThumb(e.target.value)} placeholder="https://..." className="mt-1" />
             {thumb && <img src={thumb} alt="Preview" className="mt-2 w-32 aspect-video object-cover rounded-md border border-white/10" />}
+          </div>
+          <div className="flex items-center space-x-2">
+            <input type="checkbox" id="v-active" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+            <Label htmlFor="v-active">Is Active (Visible to students)</Label>
           </div>
           <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background/80 backdrop-blur-xl border-t border-border mt-4 z-10"><Button type="submit">Save</Button></DialogFooter>
         </form>
@@ -152,6 +191,7 @@ export function VideoModal({ isOpen, onClose, onSave, defaultValues }: any) {
     </Dialog>
   );
 }
+
 
 import { DragDropUpload } from "@/components/DragDropUpload";
 import { supabase } from "@/integrations/supabase/client";

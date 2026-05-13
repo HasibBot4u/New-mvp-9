@@ -42,7 +42,7 @@ export default function PlayerPage() {
   const [notes, setNotes] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
@@ -357,23 +357,24 @@ export default function PlayerPage() {
             </div>
           ) : (
             <div className="relative w-full h-full bg-black group flex items-center justify-center">
-              {!isLoaded && (
+              {isBuffering && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 bg-black/50">
                   <Loader2 className="w-10 h-10 animate-spin text-primary" />
                 </div>
               )}
               <video
                 ref={videoRef}
-                src={source.type === "telegram" ? `${source.url}?token=${sessionToken || ''}` : source.url}
+                src={source.type === "telegram" && sessionToken ? `${source.url}?token=${encodeURIComponent(sessionToken)}` : source.url}
                 className="w-full h-full object-contain"
                 controls
                 autoPlay
                 playsInline
                 controlsList="nodownload"
-                onLoadStart={() => setIsLoaded(false)}
-                onWaiting={() => setIsLoaded(false)}
-                onPlaying={() => setIsLoaded(true)}
-                onCanPlay={() => setIsLoaded(true)}
+                onLoadStart={() => setIsBuffering(true)}
+                onWaiting={() => setIsBuffering(true)}
+                onPlaying={() => setIsBuffering(false)}
+                onLoadedData={() => setIsBuffering(false)}
+                onCanPlay={() => setIsBuffering(false)}
                 onLoadedMetadata={(e) => {
                   const dur = e.currentTarget.duration;
                   if (!isNaN(dur)) setDuration(dur);

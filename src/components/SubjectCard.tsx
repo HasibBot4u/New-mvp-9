@@ -23,16 +23,16 @@ export const SubjectCard: React.FC<SubjectCardProps> = ({
     <motion.div
       whileHover={{ y: -5, scale: 1.02 }}
       onClick={onClick}
-      className={`relative overflow-hidden rounded-2xl cursor-pointer shadow-md group`}
+      className={`relative overflow-hidden rounded-2xl cursor-pointer shadow-md group dark:bg-gray-800 dark:border dark:border-gray-700`}
     >
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradientFrom} ${gradientTo} opacity-90`} />
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradientFrom} ${gradientTo} opacity-90 dark:opacity-70`} />
       
       {/* Background Pattern */}
       <div className="absolute -right-10 -top-10 opacity-10 transform group-hover:scale-110 group-hover:rotate-12 transition-transform duration-500">
         {icon}
       </div>
 
-      <div className="relative p-6 flex flex-col h-full min-h-[200px] text-white">
+      <div className="relative p-6 flex flex-col h-full min-h-[200px] text-white dark:text-white">
         <div className="bg-white/20 w-12 h-12 rounded-xl flex items-center justify-center backdrop-blur-sm mb-4">
           {icon}
         </div>

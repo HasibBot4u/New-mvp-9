@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useCatalog } from "@/contexts/CatalogContext";
 import { Folder, FolderOpen, FileText, ChevronRight, ChevronDown, Plus, Database, Pencil, Trash, PlaySquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { SubjectModal, CycleModal, ChapterModal, VideoModal } from "./AdminContentModals";
+import { SubjectModal, CycleModal, ChapterModal, VideoModal, AddContentWizardModal } from "./AdminContentModals";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,7 +17,9 @@ export default function AdminContentPage() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
 
-  const [modalState, setModalState] = useState<{ type: 'subject'|'cycle'|'chapter'|'video', data?: any } | null>(null);
+  const [modalState, setModalState] = useState<{ type: 'subject'|'cycle'|'chapter'|'video', data?: any, parentIds?: any } | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const toggleNode = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -38,7 +40,7 @@ export default function AdminContentPage() {
 
     let payloadStr = "";
     if (body) {
-      payloadStr = JSON.stringify({ data: body });
+      payloadStr = JSON.stringify(body); // Changed to body, not { data: body } unless required
       headers["Content-Type"] = "application/json";
     }
 
@@ -53,16 +55,36 @@ export default function AdminContentPage() {
     headers["X-Admin-Timestamp"] = timestamp;
 
     const API_URL = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-    const res = await fetch(`${API_URL}/api/admin/${endpoint}`, { method, headers, ...(body ? { body: payloadStr } : {}) });
     
-    if (!res.ok) {
-      let errText = await res.text();
-      try { errText = JSON.parse(errText).detail || errText; } catch (_) {
-        // Ignored
+    try {
+      const res = await fetch(`${API_URL}/api/admin/${endpoint}`, { method, headers, ...(body ? { body: payloadStr } : {}) });
+      if (res.ok) {
+        return await res.json();
       }
-      throw new Error(errText);
+    } catch (e) {
+      console.warn("API call failed, falling back to Supabase directly", e);
     }
-    return res.json();
+
+    // SUPABASE FALLBACK
+    const parts = endpoint.split('/');
+    const table = parts[0];
+    const id = parts[1];
+
+    if (method === 'POST') {
+      const { data, error } = await supabase.from(table).insert([body]).select().single();
+      if (error) throw error;
+      return data;
+    } else if (method === 'PUT' && id) {
+      const { data, error } = await supabase.from(table).update(body).eq('id', id).select().single();
+      if (error) throw error;
+      return data;
+    } else if (method === 'DELETE' && id) {
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) throw error;
+      return { success: true };
+    }
+    
+    throw new Error(`Unsupported fallback operation: ${method} ${endpoint}`);
   };
 
   const handleSave = async (payload: any) => {
@@ -81,9 +103,10 @@ export default function AdminContentPage() {
         toast.success(`${type} updated successfully`);
       } else {
         // Insert
-        if (type === 'cycle') payload.subject_id = selectedNode?.id;
-        if (type === 'chapter') payload.cycle_id = selectedNode?.id;
-        if (type === 'video') payload.chapter_id = selectedNode?.id;
+        // Use wizard's parentIds if present, otherwise fallback to selectedNode
+        if (type === 'cycle') payload.subject_id = modalState.parentIds?.subjectId || selectedNode?.id;
+        if (type === 'chapter') payload.cycle_id = modalState.parentIds?.cycleId || selectedNode?.id;
+        if (type === 'video') payload.chapter_id = modalState.parentIds?.chapterId || selectedNode?.id;
 
         await apiCall('POST', endpoint, payload);
         toast.success(`${type} created successfully`);
@@ -108,6 +131,28 @@ export default function AdminContentPage() {
     }
   };
 
+  const handleGenerateCode = async (chapterId: string) => {
+    const code = "NEXUS-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+    try {
+      const { session } = (await supabase.auth.getSession()).data;
+      const { error } = await supabase.from('enrollment_codes').insert({
+        chapter_id: chapterId,
+        code: code,
+        max_uses: 1, // Default 1 use for quickly generated codes
+        generated_by: session?.user?.id,
+        created_by: session?.user?.id
+      });
+      if (error) throw error;
+      toast.success(<div>Code generated: <strong>{code}</strong></div>, { duration: 10000 });
+    } catch (err: any) {
+      toast.error(`Error generating code: ${err.message}`);
+    }
+  };
+
+  const handleWizardComplete = (type: any, parentIds: any) => {
+    setModalState({ type, parentIds });
+  };
+
   if (isLoading) return <div className="text-foreground-muted animate-pulse">Loading content...</div>;
 
   return (
@@ -118,8 +163,8 @@ export default function AdminContentPage() {
           <p className="text-foreground-muted text-sm mt-1">Manage Subjects, Cycles, Chapters, and Videos.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" className="h-9" onClick={() => setModalState({ type: 'subject' })}>
-            <Plus className="w-4 h-4 mr-2" /> Add Subject
+          <Button size="sm" className="h-9" onClick={() => setWizardOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" /> Add Content
           </Button>
         </div>
       </div>
@@ -127,8 +172,29 @@ export default function AdminContentPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start h-[calc(100vh-180px)]">
         {/* Hierarchical Browser */}
         <Card className="bg-surface/40 border-white/5 backdrop-blur-xl h-full flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-white/5">
+            <input 
+              type="text" 
+              placeholder="Search content..." 
+              className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
           <div className="flex-1 overflow-y-auto p-2 pb-10 space-y-0.5 custom-scrollbar">
-            {catalog?.subjects.map(subject => (
+            {catalog?.subjects
+              .filter(s => 
+                !searchTerm || 
+                s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                s.cycles.some((c:any) => 
+                  c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                  c.chapters.some((ch:any) => 
+                    ch.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    ch.videos.some((v:any) => v.title.toLowerCase().includes(searchTerm.toLowerCase()))
+                  )
+                )
+              )
+              .map(subject => (
               <div key={subject.id} className="text-sm">
                 <div 
                   className={`flex items-center justify-between p-1.5 rounded-md cursor-pointer transition-colors ${selectedNode?.id === subject.id ? 'bg-primary/20 text-primary' : 'hover:bg-white/5 text-foreground'}`}
@@ -207,6 +273,11 @@ export default function AdminContentPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {selectedNode.type === 'chapter' && (
+                    <Button variant="outline" size="sm" onClick={() => handleGenerateCode(selectedNode.id)}>
+                      Generate Code
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={() => setModalState({ type: selectedNode.type, data: selectedNode.data })}>
                     <Pencil className="w-4 h-4 mr-2" /> Edit
                   </Button>
@@ -303,6 +374,7 @@ export default function AdminContentPage() {
       {modalState?.type === 'cycle' && <CycleModal isOpen={true} onClose={() => setModalState(null)} onSave={handleSave} defaultValues={modalState.data} />}
       {modalState?.type === 'chapter' && <ChapterModal isOpen={true} onClose={() => setModalState(null)} onSave={handleSave} defaultValues={modalState.data} />}
       {modalState?.type === 'video' && <VideoModal isOpen={true} onClose={() => setModalState(null)} onSave={handleSave} defaultValues={modalState.data} />}
+      {wizardOpen && <AddContentWizardModal isOpen={true} onClose={() => setWizardOpen(false)} onComplete={handleWizardComplete} catalog={catalog} />}
     </div>
   );
 }

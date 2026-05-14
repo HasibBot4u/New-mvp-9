@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { logActivity } from "@/lib/activityLogger";
 
 interface Profile {
   id: string;
@@ -28,7 +30,16 @@ interface AuthState {
   refresh: () => Promise<void>;
 }
 
-import { logActivity } from "@/lib/activityLogger";
+export const refreshToken = async () => {
+  try {
+    const { data: { session }, error } = await supabase.auth.refreshSession();
+    if (error) throw error;
+    return session;
+  } catch (error) {
+    console.error("Manual token refresh failed:", error);
+    return null;
+  }
+};
 
 const AuthCtx = createContext<AuthState | undefined>(undefined);
 
@@ -122,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch((e) => {
         console.error("getSession error:", e);
+        toast.error("Session check timed out. Please refresh.");
         setIsLoading(false);
       });
 
@@ -131,6 +143,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [fetchProfile]);
+
+  useEffect(() => {
+    let tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    if (session?.expires_at) {
+      const expiresAtMs = session.expires_at * 1000;
+      const now = Date.now();
+      const timeUntilRefresh = expiresAtMs - now - (5 * 60 * 1000); // 5 mins before expiry
+
+      if (timeUntilRefresh > 0) {
+        tokenRefreshTimer = setTimeout(async () => {
+          try {
+            await supabase.auth.refreshSession();
+          } catch (e) {
+            console.error("Auto token refresh failed", e);
+          }
+        }, timeUntilRefresh);
+      } else if (expiresAtMs - now > 0) { // less than 5 min, refresh immediately
+        supabase.auth.refreshSession();
+      }
+    }
+    return () => {
+      if (tokenRefreshTimer) clearTimeout(tokenRefreshTimer);
+    };
+  }, [session]);
+
+  // Removed fetch interceptor to prevent window.fetch getter errors.
+  // Instead, API calls should be wrapped using a custom fetch helper or rely on their own auth intercepts.
 
   const signIn: AuthState["signIn"] = async (email, password) => {
     try {

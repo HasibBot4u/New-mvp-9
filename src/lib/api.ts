@@ -1,11 +1,59 @@
+import { supabase } from "@/integrations/supabase/client";
+
 async function fetchWithTimeout(url: string, ms: number, options?: RequestInit): Promise<Response> {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
   try {
-    return await fetch(url, { ...options, signal: ctrl.signal });
+    return await apiFetch(url, { ...options, signal: ctrl.signal });
   } finally {
     clearTimeout(id);
   }
+}
+
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const urlStr = input instanceof Request ? input.url : input.toString();
+  
+  let response = await fetch(input, init);
+
+  if (response.status === 401 && urlStr && !urlStr.includes('supabase.co')) {
+    console.log("Got 401, attempting token refresh...");
+    const { data: { session }, error } = await supabase.auth.refreshSession();
+    if (error || !session) {
+      console.error("Token refresh failed during retry, logging out", error);
+      await supabase.auth.signOut();
+      window.location.href = '/login';
+    } else {
+      let newHeaders = init?.headers || {};
+      if (newHeaders instanceof Headers) {
+         const hs = new Headers(newHeaders);
+         hs.set('Authorization', `Bearer ${session.access_token}`);
+         newHeaders = hs;
+      } else if (typeof newHeaders === 'object' && !Array.isArray(newHeaders)) {
+         const hs: Record<string, string> = { ...newHeaders };
+         // remove any existing authorization headers
+         for (const k of Object.keys(hs)) {
+           if (k.toLowerCase() === 'authorization') {
+             delete hs[k];
+           }
+         }
+         hs['Authorization'] = `Bearer ${session.access_token}`;
+         newHeaders = hs;
+      } else if (Array.isArray(newHeaders)) {
+         const hs = newHeaders.filter(h => h[0].toLowerCase() !== 'authorization');
+         hs.push(['Authorization', `Bearer ${session.access_token}`]);
+         newHeaders = hs;
+      }
+      
+      const newInit = { ...init, headers: newHeaders };
+      if (input instanceof Request) {
+         return await fetch(new Request(input, newInit));
+      } else {
+         return await fetch(input, newInit);
+      }
+    }
+  }
+
+  return response;
 }
 
 export async function getWorkingBackend(): Promise<string> {

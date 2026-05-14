@@ -1,8 +1,117 @@
-import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+export function AddContentWizardModal({ isOpen, onClose, onComplete, catalog }: any) {
+  const [step, setStep] = useState<'type'|'parent'>('type');
+  const [type, setType] = useState<'subject'|'cycle'|'chapter'|'video'|null>(null);
+  
+  const [subjectId, setSubjectId] = useState("");
+  const [cycleId, setCycleId] = useState("");
+  const [chapterId, setChapterId] = useState("");
+
+  const reset = () => {
+    setStep('type');
+    setType(null);
+    setSubjectId("");
+    setCycleId("");
+    setChapterId("");
+  };
+
+  useEffect(() => {
+    if (isOpen) reset();
+  }, [isOpen]);
+
+  const handleNext = () => {
+    if (step === 'type') {
+      if (type === 'subject') {
+        onComplete(type, {});
+        onClose();
+      } else {
+        setStep('parent');
+      }
+    } else if (step === 'parent') {
+      onComplete(type, { subjectId, cycleId, chapterId });
+      onClose();
+    }
+  };
+
+  const selectedSubject = catalog?.subjects.find((s:any) => s.id === subjectId);
+  const cycles = selectedSubject?.cycles || [];
+  const selectedCycle = cycles.find((c:any) => c.id === cycleId);
+  const chapters = selectedCycle?.chapters || [];
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Content</DialogTitle>
+          <DialogDescription>
+            {step === 'type' ? "Select the type of content you want to create." : 
+             "Select the location for this content."}
+          </DialogDescription>
+        </DialogHeader>
+        
+        {step === 'type' && (
+          <div className="flex flex-col gap-3 py-4">
+            <Button variant={type === 'subject' ? 'default' : 'outline'} className="justify-start" onClick={() => setType('subject')}>📚 Subject</Button>
+            <Button variant={type === 'cycle' ? 'default' : 'outline'} className="justify-start" onClick={() => setType('cycle')}>🔄 Cycle</Button>
+            <Button variant={type === 'chapter' ? 'default' : 'outline'} className="justify-start" onClick={() => setType('chapter')}>📄 Chapter</Button>
+            <Button variant={type === 'video' ? 'default' : 'outline'} className="justify-start" onClick={() => setType('video')}>▶️ Video</Button>
+          </div>
+        )}
+
+        {step === 'parent' && (
+          <div className="space-y-4 py-4">
+            {(type === 'cycle' || type === 'chapter' || type === 'video') && (
+              <div className="space-y-2">
+                <Label>Select Subject <span className="text-red-500">*</span></Label>
+                <select className="w-full h-10 rounded-md border border-input bg-background px-3" value={subjectId} onChange={e => { setSubjectId(e.target.value); setCycleId(""); setChapterId(""); }}>
+                  <option value="">-- Select Subject --</option>
+                  {catalog?.subjects.map((s:any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
+            {(type === 'chapter' || type === 'video') && (
+              <div className="space-y-2">
+                <Label>Select Cycle <span className="text-red-500">*</span></Label>
+                <select className="w-full h-10 rounded-md border border-input bg-background px-3" disabled={!subjectId} value={cycleId} onChange={e => { setCycleId(e.target.value); setChapterId(""); }}>
+                  <option value="">-- Select Cycle --</option>
+                  {cycles.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
+            {(type === 'video') && (
+              <div className="space-y-2">
+                <Label>Select Chapter <span className="text-red-500">*</span></Label>
+                <select className="w-full h-10 rounded-md border border-input bg-background px-3" disabled={!cycleId} value={chapterId} onChange={e => setChapterId(e.target.value)}>
+                  <option value="">-- Select Chapter --</option>
+                  {chapters.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter className="mt-4">
+          {step === 'type' && <Button onClick={handleNext} disabled={!type}>Next</Button>}
+          {step === 'parent' && (
+            <div className="flex w-full justify-between">
+              <Button variant="outline" onClick={() => setStep('type')}>Back</Button>
+              <Button onClick={handleNext} disabled={
+                (type === 'cycle' && !subjectId) || 
+                (type === 'chapter' && !cycleId) || 
+                (type === 'video' && !chapterId)
+              }>Next</Button>
+            </div>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function SubjectModal({ isOpen, onClose, onSave, defaultValues }: any) {
   const [name, setName] = useState(defaultValues?.name || "");

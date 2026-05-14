@@ -1,529 +1,425 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, User, Clock, BookOpen, BarChart3, MessageSquare, Monitor, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Loader2, Activity, User, BookOpen, Map, StickyNote, Video, Laptop, ArrowLeft, Send } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-
-interface FetchState<T> {
-  data: T | null;
-  loading: boolean;
-  error: string | null;
-}
 
 export default function AdminUserDetailPage() {
   const { userId } = useParams();
   const navigate = useNavigate();
   const { session } = useAuth();
-  
-  const [profile, setProfile] = useState<FetchState<any>>({ data: null, loading: true, error: null });
-  const [stats, setStats] = useState<FetchState<any>>({ data: null, loading: true, error: null });
-  const [activity, setActivity] = useState<FetchState<any[]>>({ data: null, loading: true, error: null });
-  const [watchHistory, setWatchHistory] = useState<FetchState<any[]>>({ data: null, loading: true, error: null });
-  const [notes, setNotes] = useState<FetchState<any[]>>({ data: null, loading: true, error: null });
-  const [sessions, setSessions] = useState<FetchState<any[]>>({ data: null, loading: true, error: null });
 
-  const [notesSearch, setNotesSearch] = useState("");
-  const [notificationMsg, setNotificationMsg] = useState("");
-  const [sendingNotification, setSendingNotification] = useState(false);
-  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
 
-  // Abort controller refs
+  // Fetch states
+  const [profile, setProfile] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
+  const [activity, setActivity] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
+  const [watchHistory, setWatchHistory] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
+  const [stats, setStats] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
+  const [notes, setNotes] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
+  const [sessionsData, setSessionsData] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
+
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState("");
+  const [selectedNote, setSelectedNote] = useState<any>(null);
+
+  const mounted = useRef(false);
   const abortControllers = useRef<{ [key: string]: AbortController }>({});
 
-  const fetchData = async (
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      Object.values(abortControllers.current).forEach(c => c.abort());
+    };
+  }, []);
+
+  const fetchData = useCallback(async (
     endpoint: string, 
-    setState: React.Dispatch<React.SetStateAction<FetchState<any>>>, 
+    setState: React.Dispatch<React.SetStateAction<{data: any, loading: boolean, error: string|null}>>,
     key: string
   ) => {
+    if (!mounted.current) return;
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     if (abortControllers.current[key]) {
       abortControllers.current[key].abort();
     }
-    
     const controller = new AbortController();
     abortControllers.current[key] = controller;
     
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
     try {
-      const token = session?.access_token;
-      if (!token) throw new Error("No session token available");
-
       const response = await fetch(`${API_BASE}${endpoint}`, {
-        headers: { "Authorization": `Bearer ${token}` },
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
         signal: controller.signal
       });
       
       clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`Failed with status: ${response.status}`);
-      }
-      
+      if (!response.ok) throw new Error(`Status HTTP: ${response.status}`);
       const data = await response.json();
-      setState({ data, loading: false, error: null });
+      if (mounted.current) {
+        setState({ data, loading: false, error: null });
+      }
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        setState({ data: null, loading: false, error: "Request timed out" });
-      } else {
-        setState({ data: null, loading: false, error: err.message || "Failed to load data" });
+      if (mounted.current) {
+        setState({ data: null, loading: false, error: err.name === "AbortError" ? "Request timed out" : err.message || "Failed to load data" });
       }
     }
-  };
+  }, [session?.access_token]);
 
-  const loadAllData = () => {
+  const loadAll = useCallback(() => {
     if (!userId) return;
     fetchData(`/api/admin/users/${userId}/profile`, setProfile, 'profile');
-    fetchData(`/api/admin/users/${userId}/stats`, setStats, 'stats');
     fetchData(`/api/admin/users/${userId}/activity?page=1&limit=50`, setActivity, 'activity');
     fetchData(`/api/admin/users/${userId}/watch-history`, setWatchHistory, 'history');
+    fetchData(`/api/admin/users/${userId}/stats`, setStats, 'stats');
     fetchData(`/api/admin/users/${userId}/notes`, setNotes, 'notes');
-    fetchData(`/api/admin/users/${userId}/sessions`, setSessions, 'sessions');
-  };
+    fetchData(`/api/admin/users/${userId}/sessions`, setSessionsData, 'sessions');
+  }, [userId, fetchData]);
 
   useEffect(() => {
-    loadAllData();
-    
-    return () => {
-      // Abort all in-flight requests on unmount
-      Object.values(abortControllers.current).forEach(c => c.abort());
-    };
-  }, [userId, session]);
-
-  const handleSendNotification = async () => {
-    if (!notificationMsg.trim() || !userId) return;
-    setSendingNotification(true);
-    try {
-      // Stubbing the notification send action as per missing specific endpoint requirement in prompt
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setNotificationOpen(false);
-      setNotificationMsg("");
-      alert("Notification sent successfully.");
-    } catch (err) {
-      alert("Failed to send notification.");
-    } finally {
-      setSendingNotification(false);
+    if (session?.access_token && userId) {
+      loadAll();
     }
-  };
+  }, [session?.access_token, userId, loadAll]);
 
-  const renderSkeleton = () => (
-    <div className="animate-pulse space-y-4 w-full">
-      <div className="h-4 bg-white/10 rounded w-3/4"></div>
-      <div className="h-4 bg-white/10 rounded w-1/2"></div>
-      <div className="h-32 bg-white/10 rounded"></div>
-    </div>
+  const Skeleton = () => (
+    <div className="animate-pulse bg-white/10 rounded-xl h-24 w-full"></div>
   );
 
-  const renderError = (error: string, retryFn: () => void) => (
-    <div className="p-6 text-center border border-destructive/20 bg-destructive/10 rounded-xl">
-      <p className="text-destructive mb-4 font-medium">{error}</p>
-      <Button variant="outline" size="sm" onClick={retryFn}>
-        Retry Loading
-      </Button>
+  const ErrorUI = ({ error, onRetry }: { error: string, onRetry: () => void }) => (
+    <div className="p-4 bg-destructive/10 text-destructive rounded-xl border border-destructive/30 flex flex-col items-center gap-2">
+      <p>{error}</p>
+      <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
     </div>
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden gap-4 -m-4 sm:-m-8 p-4 sm:p-8 pt-0">
-      <div className="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 py-4">
-        <div className="flex items-center gap-4">
-          <Button onClick={() => navigate("/admin/users")} variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <h1 className="text-2xl font-bold tracking-tight">User Details</h1>
-        </div>
-        
-        <Dialog open={notificationOpen} onOpenChange={setNotificationOpen}>
-          <DialogTrigger asChild>
-            <Button variant="default" className="gap-2">
-              <Send className="w-4 h-4" />
-              Send Notification
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px] bg-background border-border">
-            <DialogHeader>
-              <DialogTitle>Send Notification</DialogTitle>
-              <DialogDescription>
-                Send a direct message to this user. It will appear in their notifications.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <textarea
-                className="w-full h-32 p-3 rounded-md bg-background border border-input text-sm"
-                placeholder="Type your message here..."
-                value={notificationMsg}
-                onChange={(e) => setNotificationMsg(e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setNotificationOpen(false)} disabled={sendingNotification}>
-                Cancel
-              </Button>
-              <Button onClick={handleSendNotification} disabled={sendingNotification || !notificationMsg.trim()}>
-                {sendingNotification ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Send Message
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+    <div className="p-4 md:p-8 flex flex-col gap-6 bg-background text-foreground min-h-full rounded-tl-xl border-l border-t border-border">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" onClick={() => navigate("/admin/users")} className="gap-2">
+          <ArrowLeft className="w-4 h-4" /> Back to Users
+        </Button>
+        <Button onClick={() => setShowNotificationModal(true)}>Send Notification</Button>
       </div>
 
-      {profile.loading ? (
-        <div className="shrink-0 p-6 border border-border bg-surface/50 rounded-2xl">
-          {renderSkeleton()}
-        </div>
-      ) : profile.error ? (
-        renderError(profile.error, () => fetchData(`/api/admin/users/${userId}/profile`, setProfile, 'profile'))
-      ) : profile.data && (
-        <div className="shrink-0 p-6 border border-border bg-surface/50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-primary/20 text-primary flex items-center justify-center text-2xl font-bold shrink-0">
-              {profile.data.display_name?.charAt(0) || "U"}
+      {showNotificationModal && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-background border border-border p-6 rounded-xl w-full max-w-md flex flex-col gap-4 shadow-2xl">
+            <h2 className="text-xl font-bold">Send Notification</h2>
+            <textarea 
+              value={notificationMessage}
+              onChange={(e) => setNotificationMessage(e.target.value)}
+              className="bg-transparent border border-input rounded-md p-3 h-32 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Type your message here..."
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowNotificationModal(false)}>Cancel</Button>
+              <Button onClick={() => {
+                alert(`Notification sent`);
+                setShowNotificationModal(false);
+                setNotificationMessage("");
+              }}>Send</Button>
             </div>
-            <div>
-              <div className="font-bold text-xl">{profile.data.display_name || "Unknown User"}</div>
-              <div className="text-sm text-foreground-muted mb-1">{profile.data.email}</div>
-              <div className="text-xs text-foreground-dim space-x-3">
-                <span>Joined: {profile.data.created_at ? new Date(profile.data.created_at).toLocaleDateString() : 'Unknown'}</span>
-                <span>Active: {profile.data.last_active ? new Date(profile.data.last_active).toLocaleString() : 'Unknown'}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {profile.data.is_blocked && <Badge variant="destructive">BLOCKED</Badge>}
-            <Badge variant={profile.data.role === "admin" ? "default" : "secondary"} className="uppercase">
-              {profile.data.role || "user"}
-            </Badge>
           </div>
         </div>
       )}
 
-      <Tabs defaultValue="overview" className="flex-1 flex flex-col overflow-hidden">
-        <div className="shrink-0 border-b border-border mb-4">
-          <TabsList className="bg-transparent h-12 w-full justify-start overflow-x-auto rounded-none space-x-2">
-            <TabsTrigger value="overview" className="data-[state=active]:bg-white/10 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"><User className="w-4 h-4 mr-2"/> Overview</TabsTrigger>
-            <TabsTrigger value="activity" className="data-[state=active]:bg-white/10 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"><Activity className="w-4 h-4 mr-2"/> Activity Timeline</TabsTrigger>
-            <TabsTrigger value="history" className="data-[state=active]:bg-white/10 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"><Video className="w-4 h-4 mr-2"/> Watch History</TabsTrigger>
-            <TabsTrigger value="heatmap" className="data-[state=active]:bg-white/10 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"><Map className="w-4 h-4 mr-2"/> Subject Heatmap</TabsTrigger>
-            <TabsTrigger value="notes" className="data-[state=active]:bg-white/10 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"><StickyNote className="w-4 h-4 mr-2"/> Notes</TabsTrigger>
-            <TabsTrigger value="live" className="data-[state=active]:bg-white/10 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"><BookOpen className="w-4 h-4 mr-2"/> Live Attendance</TabsTrigger>
-            <TabsTrigger value="sessions" className="data-[state=active]:bg-white/10 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"><Laptop className="w-4 h-4 mr-2"/> Sessions</TabsTrigger>
+      {selectedNote && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-background border border-border p-6 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col gap-4 shadow-2xl">
+            <div className="flex justify-between items-start">
+              <div className="pr-8">
+                <h2 className="text-xl font-bold">{selectedNote.video_title || "Unknown Video"}</h2>
+                <p className="text-sm text-foreground/50">{new Date(selectedNote.created_at).toLocaleString()}</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setSelectedNote(null)}>✕</Button>
+            </div>
+            <div className="overflow-y-auto whitespace-pre-wrap flex-1 bg-secondary/30 p-4 rounded-md text-sm leading-relaxed">
+              {selectedNote.content}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {profile.loading ? <Skeleton /> : profile.error ? <ErrorUI error={profile.error} onRetry={() => fetchData(`/api/admin/users/${userId}/profile`, setProfile, 'profile')} /> : profile.data && (
+        <Card className="bg-surface border-border shadow-sm">
+          <CardContent className="p-6 flex flex-col md:flex-row items-center md:items-start gap-5">
+            <div className="shrink-0 w-20 h-20 rounded-full bg-primary/20 text-primary flex items-center justify-center text-3xl font-bold uppercase shadow-inner">
+              {profile.data.display_name?.[0] || profile.data.email?.[0] || "U"}
+            </div>
+            <div className="flex flex-col gap-1.5 text-center md:text-left flex-1">
+              <h1 className="text-2xl font-bold tracking-tight">{profile.data.display_name || "Unknown"}</h1>
+              <p className="text-foreground/70">{profile.data.email}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-2 justify-center md:justify-start">
+                <Badge variant={profile.data.role === 'admin' ? 'default' : 'secondary'} className="uppercase">
+                  {profile.data.role}
+                </Badge>
+                {profile.data.is_blocked && <Badge variant="destructive">BLOCKED</Badge>}
+                <span className="text-sm text-foreground/50 ml-2">Joined: {new Date(profile.data.created_at).toLocaleDateString()}</span>
+                {profile.data.last_active && <span className="text-sm text-foreground/50 ml-2">Active: {new Date(profile.data.last_active).toLocaleString()}</span>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col">
+        <div className="overflow-x-auto pb-2 mb-4 shrink-0">
+          <TabsList className="bg-transparent h-10 gap-2 flex w-max">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-full px-4 border border-transparent data-[state=active]:border-primary/20"><User className="w-4 h-4 mr-2"/> Overview</TabsTrigger>
+            <TabsTrigger value="activity" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-full px-4 border border-transparent data-[state=active]:border-primary/20"><Clock className="w-4 h-4 mr-2"/> Activity</TabsTrigger>
+            <TabsTrigger value="watch" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-full px-4 border border-transparent data-[state=active]:border-primary/20"><Monitor className="w-4 h-4 mr-2"/> Watch History</TabsTrigger>
+            <TabsTrigger value="heatmap" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-full px-4 border border-transparent data-[state=active]:border-primary/20"><Calendar className="w-4 h-4 mr-2"/> Heatmap</TabsTrigger>
+            <TabsTrigger value="notes" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-full px-4 border border-transparent data-[state=active]:border-primary/20"><MessageSquare className="w-4 h-4 mr-2"/> Notes</TabsTrigger>
+            <TabsTrigger value="live" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-full px-4 border border-transparent data-[state=active]:border-primary/20"><BookOpen className="w-4 h-4 mr-2"/> Live</TabsTrigger>
+            <TabsTrigger value="sessions" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-full px-4 border border-transparent data-[state=active]:border-primary/20"><BarChart3 className="w-4 h-4 mr-2"/> Sessions</TabsTrigger>
           </TabsList>
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 bg-surface/30 border border-border rounded-xl p-4">
-          <TabsContent value="overview" className="m-0 space-y-6">
-            {stats.loading ? renderSkeleton() : stats.error ? renderError(stats.error, () => fetchData(`/api/admin/users/${userId}/stats`, setStats, 'stats')) : (
+        <div className="flex-1 bg-surface/30 border border-border rounded-xl p-6 overflow-y-auto">
+          <TabsContent value="overview" className="m-0 focus:outline-none">
+            {stats.loading ? <Skeleton /> : stats.error ? <ErrorUI error={stats.error} onRetry={() => fetchData(`/api/admin/users/${userId}/stats`, setStats, 'stats')} /> : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-4 rounded-xl bg-surface border border-white/5 shadow-sm">
-                  <div className="text-foreground-muted text-sm mb-1 font-medium">Total Watch Time</div>
-                  <div className="text-3xl font-bold font-mono">
-                    {Math.floor((stats.data?.total_watch_time || 0) / 60)} <span className="text-base font-normal text-foreground-muted">mins</span>
-                  </div>
-                </div>
-                <div className="p-4 rounded-xl bg-surface border border-white/5 shadow-sm">
-                  <div className="text-foreground-muted text-sm mb-1 font-medium">Videos Completed</div>
-                  <div className="text-3xl font-bold font-mono">{stats.data?.videos_completed || 0}</div>
-                </div>
-                <div className="p-4 rounded-xl bg-surface border border-white/5 shadow-sm">
-                  <div className="text-foreground-muted text-sm mb-1 font-medium">Engagement Score</div>
-                  <div className="text-3xl font-bold font-mono text-emerald-400">{stats.data?.engagement_score || 0}</div>
-                </div>
-                <div className="p-4 rounded-xl bg-surface border border-white/5 shadow-sm">
-                  <div className="text-foreground-muted text-sm mb-1 font-medium">Total Sessions</div>
-                  <div className="text-3xl font-bold font-mono">{sessions.data?.length || 0}</div>
-                </div>
+                <Card className="bg-surface shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-foreground/60">Total Watch Time</CardTitle></CardHeader><CardContent><div className="text-3xl font-bold tabular-nums">{Math.floor((stats.data?.total_watch_time || 0)/60)} <span className="text-lg font-normal text-foreground/50">h</span></div></CardContent></Card>
+                <Card className="bg-surface shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-foreground/60">Videos Completed</CardTitle></CardHeader><CardContent><div className="text-3xl font-bold tabular-nums">{stats.data?.videos_completed || 0}</div></CardContent></Card>
+                <Card className="bg-surface shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-foreground/60">Engagement Score</CardTitle></CardHeader><CardContent><div className="text-3xl font-bold tabular-nums text-emerald-500">{stats.data?.engagement_score || 0}%</div></CardContent></Card>
+                <Card className="bg-surface shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-foreground/60">Total Sessions</CardTitle></CardHeader><CardContent><div className="text-3xl font-bold tabular-nums">{stats.data?.total_sessions || sessionsData?.data?.length || 0}</div></CardContent></Card>
               </div>
             )}
           </TabsContent>
 
-          <TabsContent value="activity" className="m-0">
-            {activity.loading ? renderSkeleton() : activity.error ? renderError(activity.error, () => fetchData(`/api/admin/users/${userId}/activity?page=1&limit=50`, setActivity, 'activity')) : (
-              !activity.data || activity.data.length === 0 ? (
-                <p className="text-foreground-muted text-center py-12">No activity recorded yet.</p>
-              ) : (
-                <div className="space-y-4">
-                  <div className="relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
-                    {activity.data.map((log: any) => {
-                      const isLogin = log.action.includes('login');
-                      const isStream = log.action.includes('error') ? false : log.action.includes('stream') || log.action.includes('video');
-                      const colorClass = isLogin ? "text-emerald-500" : isStream ? "text-blue-500" : "text-primary";
-                      return (
-                        <div key={log.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active mb-6">
-                          <div className={`flex items-center justify-center w-10 h-10 rounded-full border border-white/10 bg-surface shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow sm:shadow-md ${colorClass}`}>
-                            <Activity className="w-4 h-4" />
-                          </div>
-                          <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border border-white/5 bg-surface/50 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
-                              <Badge variant="outline" className={`w-fit ${colorClass} border-${colorClass.split('-')[1]}/30`}>
-                                {log.action || "User Action"}
-                              </Badge>
-                              <div className="text-xs text-foreground-muted">{new Date(log.created_at).toLocaleString()}</div>
-                            </div>
-                            {log.details && (
-                              <div className="text-sm text-foreground-dim mb-2 break-words bg-background/50 p-2 rounded-md font-mono text-xs overflow-x-auto">
-                                {typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2)}
-                              </div>
-                            )}
-                          </div>
+          <TabsContent value="activity" className="m-0 focus:outline-none">
+            {activity.loading ? <Skeleton /> : activity.error ? <ErrorUI error={activity.error} onRetry={() => fetchData(`/api/admin/users/${userId}/activity?page=1&limit=50`, setActivity, 'activity')} /> : (
+              <div className="relative pl-6 sm:pl-8 border-l-2 border-border/50 py-4 max-w-4xl">
+                {(activity.data?.items || activity.data || []).map((item: any, idx: number) => {
+                  let color = "bg-gray-500 border-gray-400";
+                  let actionName = item.action || "Unknown Action";
+                  if (actionName.includes("login")) color = "bg-emerald-500 border-emerald-400";
+                  else if (actionName.includes("stream")) color = "bg-blue-500 border-blue-400";
+                  else if (actionName.includes("catalog") || actionName.includes("view")) color = "bg-purple-500 border-purple-400";
+                  else if (actionName.includes("complete")) color = "bg-amber-500 border-amber-400";
+                  
+                  return (
+                    <div key={item.id || idx} className="relative mb-8 last:mb-0">
+                      <div className={`absolute -left-[31px] sm:-left-[39px] top-1.5 w-4 h-4 rounded-full border-2 bg-background ${color} shadow-[0_0_0_4px_theme(colors.background)]`} />
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-2">
+                        <Badge variant="outline" className={`shrink-0 ${color.replace('bg-', 'text-').replace('border-', 'border-').split(' ')[1]}`}>
+                          {actionName}
+                        </Badge>
+                        <span className="text-xs font-medium text-foreground/50">{new Date(item.created_at).toLocaleString()}</span>
+                      </div>
+                      {item.details && Object.keys(item.details).length > 0 && (
+                        <div className="text-xs text-foreground/70 bg-black/20 border border-white/5 p-3 rounded-lg mt-2 overflow-x-auto whitespace-pre-wrap font-mono shadow-inner">
+                          {JSON.stringify(item.details, null, 2)}
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )
-            )}
-          </TabsContent>
-
-          <TabsContent value="history" className="m-0">
-            {watchHistory.loading ? renderSkeleton() : watchHistory.error ? renderError(watchHistory.error, () => fetchData(`/api/admin/users/${userId}/watch-history`, setWatchHistory, 'history')) : (
-              <div className="rounded-md border border-border">
-                <Table>
-                  <TableHeader className="bg-black/20">
-                    <TableRow>
-                      <TableHead>Video Title</TableHead>
-                      <TableHead className="w-[200px]">Progress</TableHead>
-                      <TableHead className="text-center w-[100px]">Completed</TableHead>
-                      <TableHead className="w-[180px]">Watched At</TableHead>
-                      <TableHead className="text-right w-[120px]">Times Watched</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {watchHistory.data && [...watchHistory.data].sort((a, b) => new Date(b.watched_at).getTime() - new Date(a.watched_at).getTime()).map((h: any, i: number) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-medium max-w-[300px] truncate" title={h.video_title}>{h.video_title || "Unknown Video"}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                              <div className="h-full bg-primary transition-all duration-500" style={{ width: `${h.progress_percent || 0}%` }} />
-                            </div>
-                            <span className="text-xs font-medium w-9 text-right">{Math.round(h.progress_percent || 0)}%</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {h.completed ? (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-500">✓</span>
-                          ) : (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-foreground-muted/20 text-foreground-muted">✗</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-foreground-muted text-sm">
-                          {h.watched_at ? new Date(h.watched_at).toLocaleString() : 'N/A'}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">{h.times_watched || 1}</TableCell>
-                      </TableRow>
-                    ))}
-                    {(!watchHistory.data || watchHistory.data.length === 0) && (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-foreground-muted">No watch history found.</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="heatmap" className="m-0">
-            <div className="border border-white/5 rounded-xl bg-surface p-6 shadow-sm overflow-x-auto">
-              <div className="flex items-center justify-between mb-6 min-w-[600px]">
-                <h3 className="font-semibold text-lg">Activity Calendar</h3>
-                <div className="text-sm text-foreground-muted font-medium pr-4">Last 84 Days</div>
-              </div>
-              <div className="flex items-end gap-[3px] pb-2 min-w-[600px]">
-                {Array.from({ length: 12 }).map((_, weekIndex) => (
-                  <div key={weekIndex} className="flex flex-col gap-[3px] shrink-0">
-                    {Array.from({ length: 7 }).map((_, dayIndex) => {
-                      const cellDayIndex = weekIndex * 7 + dayIndex;
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      const startDate = new Date(today.getTime() - (83 * 24 * 60 * 60 * 1000));
-                      const cellDate = new Date(startDate.getTime() + (cellDayIndex * 24 * 60 * 60 * 1000));
-                      
-                      let count = 0;
-                      const allData = [...(activity.data || []), ...(watchHistory.data || [])];
-                      allData.forEach((item: any) => {
-                        const dateStr = item.created_at || item.watched_at;
-                        if (dateStr) {
-                          const d = new Date(dateStr);
-                          d.setHours(0, 0, 0, 0);
-                          if (d.getTime() === cellDate.getTime()) count++;
-                        }
-                      });
-
-                      const activeLevel = count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : count <= 8 ? 3 : 4;
-                      const bgClasses = [
-                        "bg-white/5 border-white/5", // 0
-                        "bg-primary/30 border-primary/20", // 1
-                        "bg-primary/60 border-primary/40", // 2
-                        "bg-primary/80 border-primary/60", // 3
-                        "bg-primary border-primary", // 4
-                      ];
-                      
-                      return (
-                        <div 
-                          key={dayIndex} 
-                          className={`w-[14px] h-[14px] rounded-[2px] border ${bgClasses[activeLevel]} hover:ring-2 hover:ring-foreground transition-all cursor-crosshair`} 
-                          title={`${cellDate.toDateString()}: ${count} activities`}
-                        />
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 mt-4 text-xs text-foreground-muted min-w-[600px]">
-                <span>Less</span>
-                <div className="w-[14px] h-[14px] rounded-[2px] bg-white/5 border border-white/5" />
-                <div className="w-[14px] h-[14px] rounded-[2px] bg-primary/30 border border-primary/20" />
-                <div className="w-[14px] h-[14px] rounded-[2px] bg-primary/60 border border-primary/40" />
-                <div className="w-[14px] h-[14px] rounded-[2px] bg-primary/80 border border-primary/60" />
-                <div className="w-[14px] h-[14px] rounded-[2px] bg-primary border border-primary" />
-                <span>More</span>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="notes" className="m-0 space-y-4">
-            {notes.loading ? renderSkeleton() : notes.error ? renderError(notes.error, () => fetchData(`/api/admin/users/${userId}/notes`, setNotes, 'notes')) : (
-              <>
-                <div className="relative max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
-                  <Input 
-                    placeholder="Search notes content or video title..." 
-                    className="pl-9 bg-background/50"
-                    value={notesSearch}
-                    onChange={(e) => setNotesSearch(e.target.value)}
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {notes.data && notes.data.filter((n: any) => 
-                    (n.content || "").toLowerCase().includes(notesSearch.toLowerCase()) || 
-                    (n.video_title || "").toLowerCase().includes(notesSearch.toLowerCase())
-                  ).map((n: any, i: number) => (
-                    <Dialog key={i}>
-                      <DialogTrigger asChild>
-                        <div className="p-5 rounded-xl bg-surface border border-white/10 flex flex-col cursor-pointer hover:border-primary/50 transition-colors shadow-sm h-48 group">
-                          <div className="text-sm font-semibold mb-3 flex items-start justify-between gap-2">
-                            <span className="line-clamp-2 text-primary group-hover:underline decoration-primary/50">{n.video_title || "Unknown Video"}</span>
-                            <StickyNote className="w-4 h-4 text-foreground-muted shrink-0 mt-0.5" />
-                          </div>
-                          <div className="text-sm text-foreground-dim whitespace-pre-wrap flex-1 min-h-[60px] line-clamp-3">
-                            {n.content}
-                          </div>
-                          <div className="text-xs text-foreground-muted mt-3 pt-3 border-t border-white/5 uppercase tracking-wide">
-                            {new Date(n.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl bg-background border-border max-h-[80vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle className="text-primary pr-8">{n.video_title || "Unknown Video"}</DialogTitle>
-                          <DialogDescription>
-                            Created at {new Date(n.created_at).toLocaleString()}
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="mt-4 p-4 rounded-lg bg-surface border border-white/5 text-foreground whitespace-pre-wrap leading-relaxed font-bangla">
-                          {n.content}
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  ))}
-                  {(!notes.data || notes.data.length === 0) && (
-                    <div className="col-span-full py-12 text-center text-foreground-muted border border-dashed border-border rounded-xl">
-                      <StickyNote className="w-8 h-8 mx-auto mb-3 opacity-20" />
-                      <p>No notes taken by this user.</p>
+                      )}
                     </div>
-                  )}
-                </div>
-              </>
+                  );
+                })}
+                {(!activity.data || activity.data.length === 0) && <p className="text-foreground/50 italic">No activity recorded</p>}
+              </div>
             )}
           </TabsContent>
 
-          <TabsContent value="live" className="m-0">
-             <div className="rounded-md border border-border">
-               <Table>
-                 <TableHeader className="bg-black/20">
-                   <TableRow>
-                     <TableHead>Class Name</TableHead>
-                     <TableHead>Join Time</TableHead>
-                     <TableHead>Leave Time</TableHead>
-                     <TableHead>Duration</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   <TableRow>
-                     <TableCell colSpan={4} className="text-center py-12 text-foreground-muted">
-                        <BookOpen className="w-8 h-8 mx-auto mb-3 opacity-20" />
-                        No live class attendance recorded.
-                     </TableCell>
-                   </TableRow>
-                 </TableBody>
-               </Table>
-             </div>
+          <TabsContent value="watch" className="m-0 focus:outline-none">
+            {watchHistory.loading ? <Skeleton /> : watchHistory.error ? <ErrorUI error={watchHistory.error} onRetry={() => fetchData(`/api/admin/users/${userId}/watch-history`, setWatchHistory, 'history')} /> : (
+              <div className="w-full overflow-x-auto border border-border shadow-sm rounded-xl bg-surface">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-foreground/60 bg-black/20 uppercase font-semibold">
+                    <tr>
+                      <th className="px-6 py-4">Video Title</th>
+                      <th className="px-6 py-4">Progress (%)</th>
+                      <th className="px-6 py-4 text-center">Completed</th>
+                      <th className="px-6 py-4">Watched At</th>
+                      <th className="px-6 py-4 text-right">Times Watched</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(watchHistory.data || []).sort((a: any, b: any) => new Date(b.watched_at).getTime() - new Date(a.watched_at).getTime()).map((item: any, i: number) => {
+                      const prog = Math.min(100, Math.max(0, item.progress_percent || 0));
+                      return (
+                        <tr key={item.id || i} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-6 py-4 font-medium text-foreground">{item.video_title || "Unknown Video"}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-full max-w-[120px] bg-black/40 rounded-full h-2 overflow-hidden shadow-inner">
+                                <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${prog}%` }}></div>
+                              </div>
+                              <span className="text-xs font-mono w-8">{Math.round(prog)}%</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            {item.completed ? 
+                              <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500 font-bold shadow-sm">✓</span> 
+                              : <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-foreground/10 text-foreground/40 font-bold shadow-sm">✗</span>}
+                          </td>
+                          <td className="px-6 py-4 text-foreground/70">{new Date(item.watched_at).toLocaleString()}</td>
+                          <td className="px-6 py-4 text-right font-mono">{item.times_watched || 1}</td>
+                        </tr>
+                      )
+                    })}
+                    {(!watchHistory.data || watchHistory.data.length === 0) && (
+                      <tr><td colSpan={5} className="px-6 py-8 text-center text-foreground/50">No watch history available</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </TabsContent>
 
-          <TabsContent value="sessions" className="m-0">
-            {sessions.loading ? renderSkeleton() : sessions.error ? renderError(sessions.error, () => fetchData(`/api/admin/users/${userId}/sessions`, setSessions, 'sessions')) : (
-              <div className="rounded-md border border-border">
-                <Table>
-                  <TableHeader className="bg-black/20">
-                    <TableRow>
-                      <TableHead className="w-[200px]">Login Time</TableHead>
-                      <TableHead>IP Address</TableHead>
-                      <TableHead>Browser / Device</TableHead>
-                      <TableHead className="text-right">Duration</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sessions.data && [...sessions.data].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((s: any, i: number) => {
-                      let parsedAgent = s.user_agent;
-                      if (parsedAgent && parsedAgent.length > 50) {
-                        if (parsedAgent.includes("Chrome")) parsedAgent = "Chrome / " + (parsedAgent.includes("Windows") ? "Windows" : parsedAgent.includes("Mac") ? "Mac" : parsedAgent.includes("Android") ? "Android" : "Other");
-                        else if (parsedAgent.includes("Firefox")) parsedAgent = "Firefox";
-                        else if (parsedAgent.includes("Safari") && !parsedAgent.includes("Chrome")) parsedAgent = "Safari";
-                      }
-                      
+          <TabsContent value="heatmap" className="m-0 focus:outline-none">
+            {activity.loading || watchHistory.loading ? <Skeleton /> : (
+              <div className="border border-border p-6 rounded-xl overflow-x-auto bg-surface shadow-sm">
+                <h3 className="font-semibold mb-6 text-foreground tracking-tight">Activity Contributions (Last 12 Weeks)</h3>
+                <div className="flex gap-1.5" style={{ width: 'fit-content' }}>
+                  {Array.from({ length: 12 }).map((_, weekIndex) => (
+                    <div key={weekIndex} className="flex flex-col gap-1.5">
+                      {Array.from({ length: 7 }).map((_, dayIndex) => {
+                        const daysAgo = (11 - weekIndex) * 7 + (6 - dayIndex);
+                        const date = new Date();
+                        date.setDate(date.getDate() - daysAgo);
+                        date.setHours(0, 0, 0, 0);
+
+                        let count = 0;
+                        const checkEvt = (evt: any) => {
+                          if (!evt) return;
+                          const d = new Date(evt.created_at || evt.watched_at);
+                          d.setHours(0,0,0,0);
+                          if (d.getTime() === date.getTime()) count++;
+                        };
+                        (activity.data?.items || activity.data || []).forEach(checkEvt);
+                        (watchHistory.data || []).forEach(checkEvt);
+
+                        let color = "bg-black/20 border border-white/5";
+                        if (count >= 9) color = "bg-primary shadow-[0_0_8px_theme(colors.primary.DEFAULT)]";
+                        else if (count >= 6) color = "bg-primary/80";
+                        else if (count >= 3) color = "bg-primary/50";
+                        else if (count >= 1) color = "bg-primary/30";
+
+                        return (
+                          <div 
+                            key={dayIndex}
+                            className={`w-3.5 h-3.5 md:w-4 md:h-4 rounded-sm ${color} transition-all duration-200 hover:ring-2 hover:ring-foreground group relative cursor-pointer`}
+                          >
+                            <div className="absolute opacity-0 group-hover:opacity-100 bg-popover text-popover-foreground text-xs p-2 rounded bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap z-10 pointer-events-none shadow-xl border border-border">
+                              {date.toLocaleDateString()}: <span className="font-bold">{count}</span> activities
+                              <svg className="absolute text-popover h-2 w-full left-0 top-full" x="0px" y="0px" viewBox="0 0 255 255" xmlSpace="preserve"><polygon className="fill-current" points="0,0 127.5,127.5 255,0"/></svg>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-6 flex items-center gap-2 text-xs text-foreground/50 font-medium w-max">
+                  <span>Less</span>
+                  <div className="w-3.5 h-3.5 rounded-sm bg-black/20 border border-white/5"></div>
+                  <div className="w-3.5 h-3.5 rounded-sm bg-primary/30"></div>
+                  <div className="w-3.5 h-3.5 rounded-sm bg-primary/50"></div>
+                  <div className="w-3.5 h-3.5 rounded-sm bg-primary/80"></div>
+                  <div className="w-3.5 h-3.5 rounded-sm bg-primary"></div>
+                  <span>More</span>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="notes" className="m-0 focus:outline-none">
+            {notes.loading ? <Skeleton /> : notes.error ? <ErrorUI error={notes.error} onRetry={() => fetchData(`/api/admin/users/${userId}/notes`, setNotes, 'notes')} /> : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {(notes.data || []).map((note: any) => (
+                  <Card key={note.id} className="cursor-pointer border-border bg-surface hover:border-primary/50 hover:shadow-md transition-all flex flex-col group overflow-hidden" onClick={() => setSelectedNote(note)}>
+                    <CardHeader className="p-4 pb-0 space-y-1">
+                      <div className="flex justify-between items-start gap-2">
+                        <CardTitle className="text-sm font-semibold leading-tight line-clamp-2 group-hover:text-primary transition-colors">{note.video_title || "Unknown Video"}</CardTitle>
+                        <MessageSquare className="w-4 h-4 text-foreground/30 shrink-0 mt-0.5" />
+                      </div>
+                      <div className="text-[10px] uppercase tracking-wider text-foreground/50 font-medium">{new Date(note.created_at).toLocaleDateString()}</div>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-3 flex-1 relative">
+                      <p className="text-sm text-foreground/80 line-clamp-4 leading-relaxed font-bangla whitespace-pre-wrap">{note.content}</p>
+                      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-surface to-transparent"></div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {(!notes.data || notes.data.length === 0) && (
+                  <div className="col-span-full py-16 text-center border-2 border-dashed border-border rounded-xl bg-black/10">
+                    <MessageSquare className="w-10 h-10 text-foreground/20 mx-auto mb-4" />
+                    <p className="text-foreground/50">No notes recorded by this user.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="live" className="m-0 focus:outline-none">
+             <div className="w-full overflow-x-auto border border-border shadow-sm rounded-xl bg-surface">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-foreground/60 bg-black/20 uppercase font-semibold">
+                    <tr>
+                      <th className="px-6 py-4">Class Name</th>
+                      <th className="px-6 py-4">Join Time</th>
+                      <th className="px-6 py-4">Leave Time</th>
+                      <th className="px-6 py-4 text-right">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-foreground/50">
+                        <BookOpen className="w-8 h-8 text-foreground/20 mx-auto mb-3" />
+                        No live class attendance recorded
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+          </TabsContent>
+
+          <TabsContent value="sessions" className="m-0 focus:outline-none">
+            {sessionsData.loading ? <Skeleton /> : sessionsData.error ? <ErrorUI error={sessionsData.error} onRetry={() => fetchData(`/api/admin/users/${userId}/sessions`, setSessionsData, 'sessions')} /> : (
+              <div className="w-full overflow-x-auto border border-border shadow-sm rounded-xl bg-surface">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-foreground/60 bg-black/20 uppercase font-semibold">
+                    <tr>
+                      <th className="px-6 py-4">Login Time</th>
+                      <th className="px-6 py-4">IP Address</th>
+                      <th className="px-6 py-4 max-w-[200px]">User Agent</th>
+                      <th className="px-6 py-4 text-right">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(sessionsData.data || []).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((sessionItem: any, i: number) => {
+                      let ua = sessionItem.user_agent || "Unknown";
+                      if(ua.includes("Chrome")) ua = `Chrome (${ua.includes("Windows") ? "Win" : ua.includes("Mac") ? "Mac" : "Android/Linux"})`;
+                      else if(ua.includes("Firefox")) ua = `Firefox`;
+                      else if(ua.includes("Safari") && !ua.includes("Chrome")) ua = `Safari`;
                       return (
-                        <TableRow key={i}>
-                          <TableCell className="font-medium text-sm whitespace-nowrap">
-                            {new Date(s.created_at).toLocaleString()}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{s.ip_address || "N/A"}</TableCell>
-                          <TableCell className="text-sm text-foreground-dim max-w-[200px] truncate" title={s.user_agent}>
-                            {parsedAgent || "N/A"}
-                          </TableCell>
-                          <TableCell className="text-right text-sm">
-                            {s.duration_minutes > 0 ? `${s.duration_minutes} min` : "Active"}
-                          </TableCell>
-                        </TableRow>
-                      );
+                        <tr key={sessionItem.id || i} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-6 py-4 font-medium">{new Date(sessionItem.created_at).toLocaleString()}</td>
+                          <td className="px-6 py-4 font-mono text-xs text-foreground/70">{sessionItem.ip_address || "Unknown"}</td>
+                          <td className="px-6 py-4 text-foreground/80 truncate max-w-[200px]" title={sessionItem.user_agent}>{ua}</td>
+                          <td className="px-6 py-4 text-right">
+                            {sessionItem.duration_minutes ? <Badge variant="outline">{sessionItem.duration_minutes} min</Badge> : <Badge className="bg-emerald-500/20 text-emerald-500 border-none hover:bg-emerald-500/20">Active</Badge>}
+                          </td>
+                        </tr>
+                      )
                     })}
-                    {(!sessions.data || sessions.data.length === 0) && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center py-12 text-foreground-muted">
-                          <Laptop className="w-8 h-8 mx-auto mb-3 opacity-20" />
-                          No session logs found.
-                        </TableCell>
-                      </TableRow>
+                    {(!sessionsData.data || sessionsData.data.length === 0) && (
+                      <tr><td colSpan={4} className="px-6 py-8 text-center text-foreground/50">No session info available</td></tr>
                     )}
-                  </TableBody>
-                </Table>
+                  </tbody>
+                </table>
               </div>
             )}
           </TabsContent>

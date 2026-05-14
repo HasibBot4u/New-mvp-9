@@ -21,6 +21,8 @@ import { SkipLink } from "@/components/a11y/SkipLink";
 import { LiveRegion } from "@/components/a11y/LiveRegion";
 import { RouteAnalytics } from "@/components/seo/RouteAnalytics";
 
+import { useDarkMode } from "@/hooks/useDarkMode";
+
 function AuthManager() {
   useEffect(() => {
     // a. Call authStore.hydrate() in useEffect ONCE
@@ -97,6 +99,7 @@ const queryClient = new QueryClient({
 const AppContent = () => {
   const isLoading = useAuthStore(state => state.isLoading);
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const { isDark, toggle } = useDarkMode();
   
   // e. Add a 5-second timeout for hydration: if still loading after 5s, force isLoading = false
   useEffect(() => {
@@ -124,10 +127,11 @@ const AppContent = () => {
   // We apply this to the root index route to handle default navigation based on auth state.
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
-        {/* Public */}
-        <Route element={<PublicShell />}>
+    <div className={isDark ? "dark" : ""}>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* Public */}
+          <Route element={<PublicShell />}>
           <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/pricing" element={<PricingPage />} />
@@ -146,7 +150,7 @@ const AppContent = () => {
         <Route path="/maintenance" element={<MaintenancePage />} />
 
         {/* Student app */}
-        <Route element={<ProtectedRoute><StudentLayout /></ProtectedRoute>}>
+        <Route element={<ProtectedRoute><StudentLayout isDark={isDark} toggleDark={toggle} /></ProtectedRoute>}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/courses" element={<CoursesPage />} />
           <Route path="/subject/:subjectSlug" element={<SubjectPage />} />
@@ -164,7 +168,7 @@ const AppContent = () => {
         </Route>
 
         {/* Admin */}
-        <Route element={<ProtectedRoute requireAdmin><AdminLayout /></ProtectedRoute>}>
+        <Route element={<ProtectedRoute requireAdmin><AdminLayout isDark={isDark} toggleDark={toggle} /></ProtectedRoute>}>
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
@@ -178,8 +182,9 @@ const AppContent = () => {
         </Route>
 
         <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </div>
   );
 };
 

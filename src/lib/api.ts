@@ -9,8 +9,7 @@ async function fetchWithTimeout(url: string, ms: number, options?: RequestInit):
 }
 
 export async function getWorkingBackend(): Promise<string> {
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (!envUrl) throw new Error('VITE_API_BASE_URL is required');
+  const envUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
   return envUrl.replace(/\/$/, '');
 }
 
@@ -59,7 +58,7 @@ export async function refreshCatalog(): Promise<void> {
 }
 
 export const getStreamUrl = (video: any): string => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL;
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
   if (!baseUrl) return '';
 
   const workerUrl = import.meta.env.VITE_CLOUDFLARE_WORKER_URL;

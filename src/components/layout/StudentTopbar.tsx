@@ -1,10 +1,9 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Bell, Search, LogOut, ShieldCheck, User as UserIcon, Settings } from "lucide-react";
+import { Bell, Search, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,
@@ -19,7 +18,7 @@ const links = [
   { to: "/subject/math", label: "উচ্চতর গণিত" },
 ];
 
-export function StudentTopbar() {
+export function StudentTopbar({ isDark, toggleDark }: { isDark?: boolean; toggleDark?: () => void }) {
   const { profile, isAdmin, signOut } = useAuth();
   const nav = useNavigate();
   const [scrolled, setScrolled] = useState(false);
@@ -63,7 +62,11 @@ export function StudentTopbar() {
         </div>
 
         <div className="flex items-center gap-1">
-          <ThemeToggle />
+          {toggleDark && (
+            <Button onClick={toggleDark} variant="ghost" size="icon" className="rounded-full hover:bg-background-overlay relative">
+              {isDark ? <Sun className="w-5 h-5 text-primary" /> : <Moon className="w-5 h-5" />}
+            </Button>
+          )}
           <Button variant="ghost" size="icon" asChild className="rounded-full hover:bg-background-overlay">
             <Link to="/search" aria-label="Search"><Search className="w-5 h-5" /></Link>
           </Button>

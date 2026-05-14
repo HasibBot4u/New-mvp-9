@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, BookOpen, Megaphone, Radio, ArrowLeft, LogOut, ScrollText, ServerCog, Ticket, Database, HardDrive, RefreshCcw } from "lucide-react";
+import { LayoutDashboard, Users, BookOpen, Megaphone, Radio, ArrowLeft, LogOut, ScrollText, ServerCog, Ticket, Database, HardDrive, RefreshCcw, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { useEffect, useState } from "react";
@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCatalog } from "@/contexts/CatalogContext";
 import { format } from "date-fns";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
 if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
 
 const items = [
@@ -21,7 +21,7 @@ const items = [
   { to: "/admin/system", icon: ServerCog, label: "সিস্টেম সেটিংস" },
 ];
 
-export function AdminLayout() {
+export function AdminLayout({ isDark, toggleDark }: { isDark?: boolean; toggleDark?: () => void }) {
   const { signOut } = useAuth();
   const nav = useNavigate();
   const { catalog } = useCatalog();
@@ -85,6 +85,12 @@ export function AdminLayout() {
         </div>
 
         <div className="flex flex-col gap-1">
+          {toggleDark && (
+            <button onClick={toggleDark} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground-dim hover:text-foreground hover:bg-white/5">
+              {isDark ? <Sun className="w-4 h-4 text-primary" /> : <Moon className="w-4 h-4" />}
+              {isDark ? "Light Mode" : "Dark Mode"}
+            </button>
+          )}
           <button onClick={() => nav("/dashboard")} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground-dim hover:text-foreground hover:bg-white/5">
             <ArrowLeft className="w-4 h-4" /> Back to app
           </button>

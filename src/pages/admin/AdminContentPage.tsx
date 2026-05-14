@@ -52,7 +52,7 @@ export default function AdminContentPage() {
     headers["X-Admin-Signature"] = signature;
     headers["X-Admin-Timestamp"] = timestamp;
 
-    const API_URL = import.meta.env.VITE_API_BASE_URL || "";
+    const API_URL = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
     const res = await fetch(`${API_URL}/api/admin/${endpoint}`, { method, headers, ...(body ? { body: payloadStr } : {}) });
     
     if (!res.ok) {

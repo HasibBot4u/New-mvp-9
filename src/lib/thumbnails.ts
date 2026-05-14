@@ -7,7 +7,7 @@ export const getThumbnailUrl = (video: any): string => {
     return `https://drive.google.com/thumbnail?id=${video.drive_file_id}&sz=w320`;
   }
   if (video.source_type === 'telegram') {
-    return `${import.meta.env.VITE_API_BASE_URL}/api/thumbnail/${video.id}`;
+    return `${import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com"}/api/thumbnail/${video.id}`;
   }
   return '/placeholder-video.jpg';
 };

@@ -40,7 +40,7 @@ class Analytics {
       const { data: session } = await supabase.auth.getSession();
       const token = session.session?.access_token;
       if (token) {
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
         await fetch(`${baseUrl}/api/activity`, {
           method: 'POST',
           headers: { 

@@ -24,7 +24,7 @@ export default function AdminDashboardPage() {
       const token = session.session?.access_token;
       if (!token) return;
 
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
       const res = await fetch(`${baseUrl}/api/admin/dashboard/metrics`, {
         headers: { "Authorization": `Bearer ${token}` }
       });

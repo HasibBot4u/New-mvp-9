@@ -124,7 +124,7 @@ export function VideoPlayer({ videoId, sizeMb = 0, onComplete, onTimeUpdate }: V
     try {
       // Wake-up flow
       try {
-        const backend = import.meta.env.VITE_API_BASE_URL as string;
+        const backend = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
         const response = await fetchWithTimeout(`${backend}/api/health`, 8000); // Fail fast so WakeUpCountdown takes over
         const health = response.ok ? await response.json() : null;
         const fetchError = !response.ok;

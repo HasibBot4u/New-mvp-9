@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from "react-router-dom";
-import { Download as DownloadIcon, WifiOff } from "lucide-react";
+import { Download as DownloadIcon, WifiOff, Sun, Moon } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { StudentSidebar } from "./StudentSidebar";
 import { StudentTopbar } from "./StudentTopbar";
@@ -10,7 +10,7 @@ import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { Button } from "@/components/ui/button";
 
-export function StudentLayout() {
+export function StudentLayout({ isDark, toggleDark }: { isDark?: boolean; toggleDark?: () => void }) {
   const { pathname } = useLocation();
   const isPlayer = pathname.startsWith("/watch/");
   const { downloads, cancelAll, cancelOne } = useDownloadQueue();
@@ -48,6 +48,11 @@ export function StudentLayout() {
           <div className={`hidden md:flex items-center gap-3 h-12 px-4 border-b border-border/40 bg-background/80 backdrop-blur sticky z-30 transition-all ${isOffline ? 'top-9' : 'top-0'}`}>
             <SidebarTrigger />
             <div className="flex-1" />
+            {toggleDark && (
+              <Button onClick={toggleDark} variant="ghost" size="icon" className="h-8 w-8 rounded-full z-50">
+                {isDark ? <Sun className="w-4 h-4 text-primary" /> : <Moon className="w-4 h-4" />}
+              </Button>
+            )}
             {isInstallable && (
                <Button onClick={promptInstall} size="sm" variant="outline" className="mr-2 h-8">
                  <DownloadIcon className="w-3.5 h-3.5 mr-2" /> Install App
@@ -58,7 +63,7 @@ export function StudentLayout() {
 
           {/* Mobile keeps the existing topbar (logo + search + bell + avatar) */}
           <div className={`md:hidden sticky z-30 transition-all ${isOffline ? 'top-9' : 'top-0'}`}>
-            <StudentTopbar />
+            <StudentTopbar isDark={isDark} toggleDark={toggleDark} />
             {isInstallable && (
                <div className="bg-primary/10 border-b border-primary/20 px-4 py-2 flex items-center justify-between">
                  <span className="text-xs font-medium text-primary">Get the NexusEdu App for a better experience!</span>

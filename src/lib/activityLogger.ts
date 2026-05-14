@@ -13,8 +13,8 @@ export async function logActivity(action: string, details: object = {}) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ action, details })
-    });
+    }).catch(() => {}); // Catch fetch errors silently
   } catch (e) {
-    console.error("Activity log failed:", e);
+    // Ignore error so it doesn't spam console
   }
 }

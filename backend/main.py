@@ -838,7 +838,7 @@ def get_active_client() -> Optional[Client]:
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     try:
-        return {"service": "NexusEdu Backend", "version": "v1.2.0", "status": "running"}
+        return {"service": "NexusEdu Backend", "version": "v1.2.1", "status": "running"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1380,7 +1380,9 @@ class DeleteUserReq(BaseModel):
 
 
 class GenerateChapterCodeReq(BaseModel):
-    chapter_id: constr(min_length=36, max_length=36)
+    chapter_id: Optional[constr(min_length=36, max_length=36)] = None
+    cycle_id: Optional[constr(min_length=36, max_length=36)] = None
+    type: Optional[str] = "chapter"  # "chapter" or "cycle"
     notes: Optional[str] = ""
     label: Optional[str] = ""
     max_uses: int = 1
@@ -1511,7 +1513,8 @@ async def admin_generate_chapter_code(req: GenerateChapterCodeReq, request: Requ
                     "Prefer": "return=minimal"
                 },
                 json={
-                    "chapter_id": req.chapter_id,
+                    "chapter_id": req.chapter_id if req.type == "chapter" else None,
+                    "cycle_id": req.cycle_id if req.type == "cycle" else None,
                     "code": secure_code,
                     "max_uses": req.max_uses,
                     "notes": req.notes,
@@ -1915,6 +1918,64 @@ async def admin_delete_video(video_id: str, request: Request):
     asyncio.create_task(refresh_catalog())
     return {"status": "ok"}
 
+class AnnouncementReq(BaseModel):
+    message: constr(min_length=1, max_length=2000)
+    target: str = "all"  # "all", "active_7d", "active_30d"
+    priority: str = "normal"  # "normal", "high", "urgent"
+
+@app.post("/api/admin/announcements")
+async def create_announcement(req: AnnouncementReq, request: Request):
+    await check_rate_limit(request, limit=10, window=60, prefix="admin_announcement")
+    user = await _ensure_admin(request)
+
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{supabase_url}/rest/v1/announcements",
+                headers={
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal"
+                },
+                json={
+                    "message": req.message,
+                    "target": req.target,
+                    "priority": req.priority,
+                    "created_by": user,
+                    "sent_at": datetime.utcnow().isoformat() + "Z"
+                }
+            )
+            resp.raise_for_status()
+            return {"status": "sent", "message": req.message}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.get("/api/admin/announcements")
+async def list_announcements(request: Request, limit: int = 50):
+    await check_rate_limit(request, limit=20, window=60, prefix="admin_announcement")
+    await _ensure_admin(request)
+
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{supabase_url}/rest/v1/announcements?order=sent_at.desc&limit={limit}",
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+            )
+            return JSONResponse(resp.json())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/admin/logs")
+async def get_logs(request: Request, limit: int = 200):
+    await _ensure_admin(request)
+    resp = await _supabase_admin_rpc("GET", f"activity_logs?select=*,profiles(email,display_name)&order=created_at.desc&limit={limit}")
+    return resp
+
 @app.get("/api/admin/dashboard/metrics")
 async def get_dashboard_metrics(request: Request):
     await _ensure_admin(request)
@@ -2013,22 +2074,26 @@ async def get_dashboard_metrics(request: Request):
             # Real popular videos from watch_history
             try:
                 resp_popular = await client.get(
-                    f"{supabase_url}/rest/v1/watch_history?select=video_id,videos(title)&order=watched_at.desc&limit=5",
+                    f"{supabase_url}/rest/v1/watch_history?select=video_id,videos(title)&order=watched_at.desc&limit=100",
                     headers=headers
                 )
                 if resp_popular.status_code == 200:
                     popular_data = resp_popular.json()
-                    # Count views per video
                     video_counts = {}
+                    video_titles = {}
                     for item in popular_data:
                         vid = item.get("video_id")
                         if vid:
                             video_counts[vid] = video_counts.get(vid, 0) + 1
-                    # Get titles
+                            if vid not in video_titles:
+                                v = item.get("videos")
+                                if isinstance(v, dict):
+                                    video_titles[vid] = v.get("title", "Unknown")
+                    # Sort by view count and take top 5
+                    sorted_videos = sorted(video_counts.items(), key=lambda x: x[1], reverse=True)[:5]
                     metrics["popular_videos"] = [
-                        {"title": item.get("videos", {}).get("title", "Unknown") if isinstance(item.get("videos"), dict) else "Unknown", 
-                         "views": video_counts.get(item.get("video_id"), 0)}
-                        for item in popular_data[:5]
+                        {"title": video_titles.get(vid, "Unknown"), "views": count}
+                        for vid, count in sorted_videos
                     ]
                 else:
                     metrics["popular_videos"] = []

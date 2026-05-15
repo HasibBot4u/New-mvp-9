@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { apiFetch, API_BASE } from "@/lib/api";
 
 export default function AdminAnnouncementsPage() {
   const [message, setMessage] = useState("");
@@ -27,15 +28,20 @@ export default function AdminAnnouncementsPage() {
   const fetchRecent = async () => {
     setIsLoadingRecent(true);
     try {
-      const { data, error } = await supabase
-        .from("announcements")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(20);
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
       
-      if (!error && data) {
-        // Map to expected format if we used the standard schema or the requested one
+      const res = await apiFetch(`${API_BASE}/api/admin/announcements?limit=50`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
         setRecentAnnouncements(data);
+      } else {
+        throw new Error("Failed to fetch announcements");
       }
     } catch (err) {
       console.error("Failed to fetch recent announcements:", err);
@@ -61,7 +67,6 @@ export default function AdminAnnouncementsPage() {
     const { data: session } = await supabase.auth.getSession();
     const token = session?.session?.access_token;
     
-    // Attempt API Request First
     const payload = {
       message,
       target,
@@ -73,110 +78,17 @@ export default function AdminAnnouncementsPage() {
     if (window.confirm(`Are you sure you want to ${isScheduling ? 'schedule' : 'send'} this announcement to ${target}?`)) {
       setIsSending(true);
       try {
-        let success = false;
-        
-        // 1. Try hitting the API
-        try {
-          const res = await fetch("/api/admin/announcements", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify(payload)
-          });
-          if (res.ok) {
-            success = true;
-          }
-        } catch (apiErr) {
-          // Ignore API error and fallback to Supabase
-        }
+        const res = await apiFetch(`${API_BASE}/api/admin/announcements`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
 
-        // 2. Fallback if API fails or doesn't exist
-        if (!success) {
-          console.log("API not available, using Supabase fallback...");
-          // Fallback: Store announcement
-          const { error: insertError } = await supabase
-            .from("announcements" as any)
-            .insert({
-              message: payload.message,
-              target: payload.target,
-              priority: payload.priority,
-              scheduled_at: payload.scheduled_at,
-              sent_at: payload.scheduled_at ? null : new Date().toISOString(),
-              created_by: session?.session?.user?.id
-            })
-            .select()
-            .single();
-
-          if (insertError) {
-            console.error("Fallback insert error:", insertError.message);
-            // This might fail if the table schema is actually the old one.
-            // If the table schema expects title/body we can attempt a second fallback
-             try {
-               await supabase.from("announcements").insert({
-                 title: `Announcement: ${payload.target}`,
-                 body: payload.message,
-                 type: payload.priority,
-                 is_active: !payload.scheduled_at
-               });
-             } catch (e) {
-               // Ignore
-             }
-          }
-
-          // Fallback delivery mechanism (Immediate only)
-          if (!payload.scheduled_at) {
-            let usersToNotify: any[] = [];
-            
-            if (target === "All Users") {
-              const { data: allUsers } = await supabase.from("profiles").select("id").limit(1000);
-              usersToNotify = allUsers || [];
-            } else if (target === "Active Users (7 days)") {
-              const sevenDaysAgo = new Date();
-              sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-              const { data: activeLogs } = await supabase
-                .from("activity_logs")
-                .select("user_id")
-                .gte("created_at", sevenDaysAgo.toISOString());
-              
-              const activeUserIds = Array.from(new Set(activeLogs?.map(log => log.user_id).filter(Boolean)));
-              usersToNotify = activeUserIds.map(id => ({ id }));
-            } else if (target === "Inactive Users (30 days)") {
-               const thirtyDaysAgo = new Date();
-               thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-               // Find active users
-               const { data: activeLogs } = await supabase
-                 .from("activity_logs")
-                 .select("user_id")
-                 .gte("created_at", thirtyDaysAgo.toISOString());
-               const activeIds = Array.from(new Set(activeLogs?.map(log => log.user_id).filter(Boolean)));
-               // Find users NOT in active logs
-               // Note: Supabase IN filter has limits, basic fallback here
-               const { data: allUsers } = await supabase.from("profiles").select("id").limit(1000);
-               usersToNotify = (allUsers || []).filter(u => !activeIds.includes(u.id));
-            } else if (target === "Specific Users" && payload.specific_emails) {
-               const { data: matchedUsers } = await supabase
-                 .from("profiles")
-                 .select("id")
-                 .in("email", payload.specific_emails);
-               usersToNotify = matchedUsers || [];
-            }
-
-            // Create notifications for matched users
-            if (usersToNotify.length > 0) {
-              const notificationInserts = usersToNotify.map(u => ({
-                user_id: u.id,
-                title: `${priority} Message from Admin`,
-                body: message,
-                type: 'announcement',
-                is_read: false
-              }));
-              
-              await supabase.from("notifications").insert(notificationInserts);
-              console.log(`Fallback: Created ${notificationInserts.length} notifications`);
-            }
-          }
+        if (!res.ok) {
+          throw new Error("API request failed");
         }
 
         toast.success(`Announcement ${isScheduling ? 'scheduled' : 'sent'} successfully`);
@@ -186,8 +98,8 @@ export default function AdminAnnouncementsPage() {
         setScheduleDate("");
         fetchRecent();
 
-      } catch (err) {
-        toast.error("Failed to process announcement.");
+      } catch (err: any) {
+        toast.error(err.message || "Failed to process announcement.");
         console.error(err);
       } finally {
         setIsSending(false);
@@ -287,51 +199,27 @@ export default function AdminAnnouncementsPage() {
               />
             </div>
 
-            {isScheduling && (
-              <div className="space-y-1.5 animate-in zoom-in-95 duration-200">
-                <label className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">Schedule For</label>
-                <Input 
-                  type="datetime-local" 
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  className="bg-black/20 border-border/50 h-10 dark:[color-scheme:dark]" 
-                />
-              </div>
-            )}
-
             {/* Actions */}
             <div className="pt-2 flex flex-col sm:flex-row gap-3 border-t border-border/30 mt-4">
               <Button 
                 onClick={() => {
-                  if (isScheduling && scheduleDate) {
-                    handleSend();
-                  } else {
-                    setIsScheduling(!isScheduling);
-                    setScheduleDate("");
-                  }
+                  toast.info("Scheduling is coming soon");
                 }} 
-                variant={isScheduling ? "default" : "outline"} 
+                variant="outline" 
                 className="flex-1 h-10 font-medium tracking-wide"
                 disabled={isSending}
               >
                 <Calendar className="w-4 h-4 mr-2" /> 
-                {isScheduling ? "Confirm Schedule" : "Schedule"}
+                Schedule
               </Button>
-              {!isScheduling && (
-                <Button 
-                  onClick={handleSend}
-                  disabled={isSending || message.length < 10}
-                  className="flex-1 h-10 font-medium tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-lg"
-                >
-                  <Send className="w-4 h-4 mr-2" /> 
-                  {isSending ? "Sending..." : "Send Immediately"}
-                </Button>
-              )}
-              {isScheduling && (
-                <Button variant="ghost" onClick={() => setIsScheduling(false)} disabled={isSending}>
-                  Cancel
-                </Button>
-              )}
+              <Button 
+                onClick={handleSend}
+                disabled={isSending || message.length < 10}
+                className="flex-1 h-10 font-medium tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-lg"
+              >
+                <Send className="w-4 h-4 mr-2" /> 
+                {isSending ? "Sending..." : "Send Immediately"}
+              </Button>
             </div>
 
           </CardContent>

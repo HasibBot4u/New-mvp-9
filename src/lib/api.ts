@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
+
 async function fetchWithTimeout(url: string, ms: number, options?: RequestInit): Promise<Response> {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);

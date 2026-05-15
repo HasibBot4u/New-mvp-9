@@ -6,6 +6,8 @@ import { Play, Square, Download, Trash2, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { API_BASE, apiFetch } from "@/lib/api";
 
 export default function AdminLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -18,30 +20,61 @@ export default function AdminLogsPage() {
   const [sourceFilter, setSourceFilter] = useState("All");
   const [timeFilter, setTimeFilter] = useState("24h");
   
-  const fetchLogs = async () => {
+  const fetchLogs = async (showLoading = false) => {
+    if (showLoading) setIsLoading(true);
     try {
-      let query = supabase
-        .from("activity_logs")
-        .select("*, profiles(display_name, email)")
-        .order("created_at", { ascending: false })
-        .limit(200); // Fetch more so local filtering works well
-      
-      const now = new Date();
-      if (timeFilter === "1h") {
-        query = query.gte("created_at", new Date(now.getTime() - 60 * 60 * 1000).toISOString());
-      } else if (timeFilter === "24h") {
-        query = query.gte("created_at", new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString());
-      } else if (timeFilter === "7d") {
-        query = query.gte("created_at", new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
-      } else if (timeFilter === "30d") {
-        query = query.gte("created_at", new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString());
+      let fetchedLogs: any[] = [];
+      let usedFallback = false;
+
+      // 1. Try fetching from the API endpoint
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const token = session?.session?.access_token;
+        
+        const res = await apiFetch(`${API_BASE}/api/admin/logs?limit=200`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        
+        if (res.ok) {
+          fetchedLogs = await res.json();
+        } else {
+          throw new Error(`API Error: ${res.status}`);
+        }
+      } catch (apiErr) {
+        console.log("API log fetch failed, falling back to Supabase direct...", apiErr);
+        usedFallback = true;
       }
-      
-      const { data, error } = await query;
-      if (error) throw error;
-      if (data) {
-        setLogs(data);
+
+      // 2. Fallback to Supabase direct query
+      if (usedFallback) {
+        let query = supabase
+          .from("activity_logs")
+          .select("*, profiles(display_name, email)")
+          .order("created_at", { ascending: false })
+          .limit(200); // Fetch more so local filtering works well
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        if (data) {
+          fetchedLogs = data;
+        }
       }
+
+      // Apply time filter locally
+      const now = new Date().getTime();
+      let cutOffTime = 0;
+      if (timeFilter === "1h") cutOffTime = now - 60 * 60 * 1000;
+      else if (timeFilter === "24h") cutOffTime = now - 24 * 60 * 60 * 1000;
+      else if (timeFilter === "7d") cutOffTime = now - 7 * 24 * 60 * 60 * 1000;
+      else if (timeFilter === "30d") cutOffTime = now - 30 * 24 * 60 * 60 * 1000;
+
+      if (cutOffTime > 0) {
+        fetchedLogs = fetchedLogs.filter(log => new Date(log.created_at).getTime() >= cutOffTime);
+      }
+
+      setLogs(fetchedLogs);
     } catch (err) {
       console.error("Error fetching logs:", err);
     } finally {
@@ -50,10 +83,10 @@ export default function AdminLogsPage() {
   };
 
   useEffect(() => {
-    fetchLogs();
+    fetchLogs(true);
     const interval = setInterval(() => {
       if (isTailing) {
-        fetchLogs();
+        fetchLogs(false);
       }
     }, 10000);
     return () => clearInterval(interval);
@@ -106,7 +139,8 @@ export default function AdminLogsPage() {
       if (!msg.toLowerCase().includes(s) && 
           !src.toLowerCase().includes(s) && 
           !sev.toLowerCase().includes(s) &&
-          !(log.user_id && log.user_id.toLowerCase().includes(s))) {
+          !(log.user_id && log.user_id.toLowerCase().includes(s)) &&
+          !(log.profiles?.email && log.profiles.email.toLowerCase().includes(s))) {
         return false;
       }
     }
@@ -238,8 +272,10 @@ export default function AdminLogsPage() {
         <div className="flex-1 bg-[#0a0a0a] p-2 md:p-4 overflow-y-auto font-mono text-[11px] md:text-xs leading-relaxed custom-scrollbar flex flex-col pt-4">
           <div className="space-y-1 mt-auto">
             {isLoading ? (
-              <div className="p-4 text-foreground/40 text-center flex items-center justify-center gap-2">
-                <Spinner className="w-4 h-4 animate-spin" /> Loading logs...
+              <div className="flex flex-col gap-2 p-4">
+                 {[...Array(10)].map((_, i) => (
+                   <Skeleton key={i} className="w-full h-8 bg-white/5 rounded" />
+                 ))}
               </div>
             ) : filteredLogs.length === 0 ? (
               <div className="p-8 text-foreground/40 text-center italic border border-dashed border-border/50 rounded-lg m-4">
@@ -293,14 +329,3 @@ export default function AdminLogsPage() {
     </div>
   );
 }
-
-// Temporary spinner component to replace missing import
-function Spinner({ className }: { className?: string }) {
-  return (
-    <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
-  );
-}
-

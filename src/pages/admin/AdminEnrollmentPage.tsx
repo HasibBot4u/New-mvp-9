@@ -67,7 +67,7 @@ export default function AdminEnrollmentPage() {
     try {
       const { data, error } = await supabase
         .from("enrollment_codes")
-        .select("*, chapters(name), cycles(name), subjects(name)")
+        .select("*, chapters(name, cycles(name, subjects(name))), cycles(name, subjects(name))")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -158,6 +158,8 @@ export default function AdminEnrollmentPage() {
     return codeType === "cycle" ? selectedCycle?.id : selectedChapter?.id;
   };
 
+  const canGenerate = Boolean(getTargetId()) && count >= 1 && maxUses >= 1;
+
   // Generation
   const handleGenerate = async () => {
     const targetId = getTargetId();
@@ -174,7 +176,8 @@ export default function AdminEnrollmentPage() {
           "Authorization": `Bearer ${session?.access_token}`
         },
         body: JSON.stringify({
-          target_id: targetId,
+          chapter_id: codeType === "chapter" ? targetId : undefined,
+          cycle_id: codeType === "cycle" ? targetId : undefined,
           type: codeType,
           count: count || 1,
           max_uses: maxUses || 1,
@@ -241,18 +244,27 @@ export default function AdminEnrollmentPage() {
     if (codes.length === 0) return;
     
     const headers = ["ID", "Code", "Label", "Type", "Target", "Uses", "Max Uses", "Status", "Expires At", "Created At"];
-    const rows = filteredCodes.map(c => [
-      c.id,
-      c.code,
-      c.label || "",
-      c.cycle_id ? "Cycle" : "Chapter",
-      c.cycles?.name || c.chapters?.name || c.subjects?.name || "",
-      c.uses,
+    const rows = filteredCodes.map(c => {
+      let parentSubject = "";
+      if (c.cycle_id) {
+         parentSubject = (c.cycles as any)?.subjects?.name || "";
+      } else if (c.chapter_id) {
+         parentSubject = (c.chapters as any)?.cycles?.subjects?.name || "";
+      }
+      
+      return [
+        c.id,
+        c.code,
+        c.label || "",
+        c.cycle_id ? "Cycle" : "Chapter",
+        parentSubject ? `${parentSubject} > ${c.cycles?.name || c.chapters?.name}` : (c.cycles?.name || c.chapters?.name || ""),
+        c.uses,
       c.max_uses,
       c.is_active ? "Active" : "Inactive",
       c.expires_at || "Never",
       c.created_at
-    ]);
+      ];
+    });
 
     const csvContent = [headers, ...rows].map(e => e.map(val => `"${val}"`).join(",")).join("\n");
     
@@ -346,24 +358,28 @@ export default function AdminEnrollmentPage() {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2">
+            <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3">
               {step === "subject" && subjects.map(s => (
-                <button key={s.id} onClick={() => handleSubjectSelect(s)} className="text-left w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-white/5 transition-colors flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xl">{s.icon || '📚'}</div>
-                  <span className="font-medium">{s.name}</span>
+                <button key={s.id} onClick={() => handleSubjectSelect(s)} className="text-left w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-white/5 transition-colors flex flex-row items-center">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
+                    {s.icon || '📚'}
+                  </div>
+                  <div className="flex-1 ml-3 font-medium">
+                    {s.name}
+                  </div>
                 </button>
               ))}
 
               {step === "cycle" && cycles.map(c => (
-                <button key={c.id} onClick={() => handleCycleSelect(c)} className="text-left w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-white/5 transition-colors flex items-center gap-3">
-                  <span className="font-medium">{c.name}</span>
+                <button key={c.id} onClick={() => handleCycleSelect(c)} className="text-left w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-white/5 transition-colors flex flex-row items-center">
+                  <div className="flex-1 font-medium">{c.name}</div>
                 </button>
               ))}
               {step === "cycle" && cycles.length === 0 && <p className="text-center text-muted-foreground p-4">No cycles found in this subject.</p>}
 
               {step === "chapter" && chapters.map(c => (
-                <button key={c.id} onClick={() => handleChapterSelect(c)} className="text-left w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-white/5 transition-colors flex items-center gap-3">
-                  <span className="font-medium">{c.name}</span>
+                <button key={c.id} onClick={() => handleChapterSelect(c)} className="text-left w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-white/5 transition-colors flex flex-row items-center">
+                  <div className="flex-1 font-medium">{c.name}</div>
                 </button>
               ))}
               {step === "chapter" && chapters.length === 0 && <p className="text-center text-muted-foreground p-4">No chapters found. Please check cycles or add content.</p>}
@@ -405,11 +421,11 @@ export default function AdminEnrollmentPage() {
                 <label className="text-xs text-foreground-muted block">Target {codeType === "cycle" ? "Cycle" : "Chapter"}</label>
                 <Button 
                   variant="outline" 
-                  className={`w-full justify-between font-normal ${getTargetId() ? "border-primary/50 text-foreground" : "text-foreground-muted bg-black/20"}`}
+                  className={`w-full justify-between font-normal flex items-center gap-2 ${getTargetId() ? "border-primary/50 text-foreground" : "text-foreground-muted bg-black/20"}`}
                   onClick={openSelector}
                 >
                   <span className="truncate">{getTargetName()}</span>
-                  <ChevronDown className="w-4 h-4 opacity-50" />
+                  <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
                 </Button>
               </div>
 
@@ -442,7 +458,7 @@ export default function AdminEnrollmentPage() {
                   onChange={(e) => setExpiresAt(e.target.value)}
                 />
               </div>
-              <Button className="w-full" onClick={handleGenerate} disabled={!getTargetId()}>Generate</Button>
+              <Button className="w-full" onClick={handleGenerate} disabled={!canGenerate}>Generate</Button>
             </CardContent>
           </Card>
         </div>
@@ -527,9 +543,22 @@ export default function AdminEnrollmentPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                             <div className="flex flex-col">
-                               <span className="text-xs font-semibold text-foreground">{c.cycles?.name || c.chapters?.name}</span>
-                               <span className="text-[10px] text-foreground-muted uppercase tracking-wider">{c.cycle_id ? 'Cycle Access' : 'Chapter Access'}</span>
+                             <div className="flex flex-col gap-0.5">
+                               {(() => {
+                                 let subjectName = "";
+                                 if (c.cycle_id) {
+                                   subjectName = (c.cycles as any)?.subjects?.name || "";
+                                 } else if (c.chapter_id) {
+                                   subjectName = (c.chapters as any)?.cycles?.subjects?.name || "";
+                                 }
+                                 return subjectName ? (
+                                   <span className="text-[10px] text-foreground-muted uppercase tracking-wider">{subjectName}</span>
+                                 ) : null;
+                               })()}
+                               <span className="text-xs font-semibold text-foreground">
+                                 {c.cycles?.name || c.chapters?.name}
+                               </span>
+                               <span className="text-[10px] text-primary/70 uppercase tracking-wider mt-0.5">{c.cycle_id ? 'Cycle Access' : 'Chapter Access'}</span>
                              </div>
                           </TableCell>
                           <TableCell>

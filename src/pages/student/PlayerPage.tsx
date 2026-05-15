@@ -52,7 +52,6 @@ function getVideoSource(video: VideoData): VideoSource {
       url: `https://drive.google.com/file/d/${video.drive_file_id}/preview` 
     };
   }
-  // Use direct MP4 stream endpoint for Telegram Source
   const url = `${API_BASE}/api/stream/${video.id}`;
   return { 
     type: "telegram", 
@@ -141,7 +140,6 @@ export default function PlayerPage() {
 
   const { updateProgress, flush } = useBatchProgress();
 
-  // Session token management
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
@@ -166,16 +164,14 @@ export default function PlayerPage() {
     };
   }, []);
 
-  // Wake telegram backend up on mount
   useEffect(() => {
     if (source?.type === "telegram") {
       const controller = new AbortController();
-      fetch(`${API_BASE}/api/health`, { signal: controller.signal }).catch(() => {});
+      fetch(`${API_BASE}/api/health`, { method: "HEAD", signal: controller.signal }).catch(() => {});
       return () => controller.abort();
     }
   }, [source?.type]);
 
-  // Load existing watch progress + notes
   const loadProgressFromSupabase = useCallback(async () => {
     if (!user || !video) return 0;
     try {
@@ -220,12 +216,14 @@ export default function PlayerPage() {
       .then(({ data }: any) => { 
         if (!mounted) return;
         if (data?.content) setNotes(data.content); 
+      })
+      .catch((err: any) => {
+        console.error("Notes load error:", err);
       });
 
     return () => { mounted = false; };
   }, [user, video, loadProgressFromSupabase]);
 
-  // Visibility API - pause when tab hidden, resume when visible
   useEffect(() => {
     const handleVisibilityChange = () => {
       const v = videoRef.current;
@@ -234,7 +232,7 @@ export default function PlayerPage() {
         wasPlayingBeforeHidden.current = !v.paused;
         if (!v.paused) {
           v.pause();
-          flush(); // Save progress when user leaves tab
+          flush();
         }
       } else {
         if (wasPlayingBeforeHidden.current && v.paused) {
@@ -246,7 +244,6 @@ export default function PlayerPage() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [flush]);
 
-  // Save progress on page close/navigate away
   useEffect(() => {
     const handleBeforeUnload = () => {
       flush();
@@ -265,7 +262,6 @@ export default function PlayerPage() {
     };
   }, [flush]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
@@ -276,7 +272,8 @@ export default function PlayerPage() {
         case ' ':
         case 'k':
           e.preventDefault();
-          v.paused ? v.play() : v.pause();
+          if (v.paused) v.play().catch(() => {});
+          else v.pause();
           break;
         case 'ArrowRight':
         case 'l':
@@ -342,10 +339,11 @@ export default function PlayerPage() {
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       try {
         const checkUrl = `${source.url}?token=${encodeURIComponent(sessionToken)}`;
-        const res = await fetch(checkUrl, { signal: controller.signal });
+        const res = await fetch(checkUrl, { method: "HEAD", signal: controller.signal });
         clearTimeout(timeoutId);
         if (res.status === 401 || res.status === 403) setErrorType("403");
         else if (res.status === 404) setErrorType("404");
+        else if (!res.ok) setErrorType("network");
         else setErrorType("unknown");
       } catch (err) {
         clearTimeout(timeoutId);
@@ -356,7 +354,6 @@ export default function PlayerPage() {
     }
   }, [source, sessionToken]);
 
-  // Notes auto-save (2s after typing pause)
   const onNotesChange = (val: string) => {
     setNotes(val);
     if (!user || !video) return;
@@ -378,13 +375,12 @@ export default function PlayerPage() {
     }, 2000);
   };
 
-  // Cleanup on unmount
   useEffect(() => {
+    const v = videoRef.current;
     return () => {
-      flush(); // Final progress save
+      flush();
       if (noteSaveTimeout.current) clearTimeout(noteSaveTimeout.current);
       if (progressFlushTimeout.current) clearTimeout(progressFlushTimeout.current);
-      const v = videoRef.current;
       if (v) {
         try {
           v.pause();
@@ -439,7 +435,6 @@ export default function PlayerPage() {
           className="rounded-2xl overflow-hidden bg-black border border-border aspect-video relative group" 
           data-watermark={user?.email}
         >
-          {/* Double Tap Areas for Telegram videos */}
           {source.type === "telegram" && !errored && (
             <>
               <div 
@@ -525,29 +520,40 @@ export default function PlayerPage() {
                 onLoadedMetadata={(e) => {
                   const dur = e.currentTarget.duration;
                   if (!isNaN(dur)) setDuration(dur);
-                  trackEvent("video_play", { video_id: video.id, title: video.title });
-                  logActivity("video_start", { video_id: video.id, title: video.title });
+                  try {
+                    trackEvent("video_play", { video_id: video.id, title: video.title });
+                    logActivity("video_start", { video_id: video.id, title: video.title });
+                  } catch (analyticsErr) {
+                    console.error("Analytics error:", analyticsErr);
+                  }
                 }}
                 onTimeUpdate={(e) => {
                   updateProgress(video.id, e.currentTarget.currentTime, duration);
                 }}
                 onPause={() => {
-                  trackEvent("video_pause", { 
-                    video_id: video.id, 
-                    title: video.title, 
-                    timestamp: videoRef.current?.currentTime 
-                  });
-                  logActivity("video_pause", { 
-                    video_id: video.id, 
-                    timestamp: videoRef.current?.currentTime 
-                  });
-                  // Debounced flush on pause
+                  try {
+                    trackEvent("video_pause", { 
+                      video_id: video.id, 
+                      title: video.title, 
+                      timestamp: videoRef.current?.currentTime 
+                    });
+                    logActivity("video_pause", { 
+                      video_id: video.id, 
+                      timestamp: videoRef.current?.currentTime 
+                    });
+                  } catch (analyticsErr) {
+                    console.error("Analytics error:", analyticsErr);
+                  }
                   if (progressFlushTimeout.current) clearTimeout(progressFlushTimeout.current);
                   progressFlushTimeout.current = setTimeout(() => flush(), 3000);
                 }}
                 onEnded={() => {
-                  trackEvent("video_complete", { video_id: video.id, title: video.title });
-                  logActivity("video_complete", { video_id: video.id, duration });
+                  try {
+                    trackEvent("video_complete", { video_id: video.id, title: video.title });
+                    logActivity("video_complete", { video_id: video.id, duration });
+                  } catch (analyticsErr) {
+                    console.error("Analytics error:", analyticsErr);
+                  }
                   handleVideoEnded();
                 }}
                 onError={(e) => {
@@ -592,7 +598,6 @@ export default function PlayerPage() {
           )}
         </div>
 
-        {/* Prev/Next Navigation */}
         {(prevVideoId || nextVideoId) && (
           <div className="mt-4 flex justify-between items-center">
             {prevVideoId ? (
@@ -616,7 +621,6 @@ export default function PlayerPage() {
           </div>
         )}
 
-        {/* Notes panel */}
         <div className="mt-8 rounded-2xl bg-background-elevated border border-border overflow-hidden">
           <button
             onClick={() => setNotesOpen(o => !o)}

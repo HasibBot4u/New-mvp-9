@@ -9,6 +9,29 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE, apiFetch } from "@/lib/api";
 
+// Safe date formatter that never crashes
+function safeDate(dateStr: string | null | undefined, fallback = "N/A"): string {
+  if (!dateStr) return fallback;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return fallback;
+    return d.toLocaleString();
+  } catch {
+    return fallback;
+  }
+}
+
+function safeDateShort(dateStr: string | null | undefined, fallback = "N/A"): string {
+  if (!dateStr) return fallback;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return fallback;
+    return d.toLocaleDateString();
+  } catch {
+    return fallback;
+  }
+}
+
 export default function AdminUserDetailPage() {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -16,7 +39,6 @@ export default function AdminUserDetailPage() {
 
   const [activeTab, setActiveTab] = useState("overview");
 
-  // Fetch states
   const [profile, setProfile] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
   const [activity, setActivity] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
   const [watchHistory, setWatchHistory] = useState<{data: any, loading: boolean, error: string|null}>({ data: null, loading: true, error: null });
@@ -26,15 +48,17 @@ export default function AdminUserDetailPage() {
 
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState("");
+  const [sendingNotification, setSendingNotification] = useState(false);
 
   const mounted = useRef(false);
   const abortControllers = useRef<{ [key: string]: AbortController }>({});
 
   useEffect(() => {
     mounted.current = true;
+    const currentControllers = abortControllers.current;
     return () => {
       mounted.current = false;
-      Object.values(abortControllers.current).forEach(c => c.abort());
+      Object.values(currentControllers).forEach(c => c.abort());
     };
   }, []);
 
@@ -44,6 +68,12 @@ export default function AdminUserDetailPage() {
     key: string
   ) => {
     if (!mounted.current) return;
+
+    if (!API_BASE) {
+      setState({ data: null, loading: false, error: "API_BASE is not configured. Set VITE_API_BASE_URL in your environment." });
+      return;
+    }
+
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     if (abortControllers.current[key]) {
@@ -61,7 +91,17 @@ export default function AdminUserDetailPage() {
         signal: controller.signal
       });
       
-      if (!response.ok) throw new Error(`Status HTTP: ${response.status}`);
+      if (!response.ok) {
+        let errorMsg = `HTTP ${response.status}`;
+        try {
+          const errData = await response.json();
+          errorMsg = errData.detail || errData.error || errorMsg;
+        } catch {
+          // ignore parse error
+        }
+        throw new Error(errorMsg);
+      }
+
       const data = await response.json();
       if (mounted.current) {
         setState({ data, loading: false, error: null });
@@ -89,20 +129,54 @@ export default function AdminUserDetailPage() {
     }
   }, [session?.access_token, userId, loadAll]);
 
+  const sendNotification = useCallback(async () => {
+    if (!notificationMessage.trim() || !userId) return;
+    setSendingNotification(true);
+    try {
+      const response = await apiFetch(`${API_BASE}/api/admin/announcements`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: `[To User ${userId}] ${notificationMessage}`,
+          target: "all",
+          priority: "high"
+        })
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to send");
+      }
+      alert("Notification posted to announcements board successfully.");
+      setNotificationMessage("");
+      setShowNotificationModal(false);
+    } catch (e: any) {
+      alert("Error sending notification: " + e.message);
+    } finally {
+      setSendingNotification(false);
+    }
+  }, [notificationMessage, userId, session?.access_token]);
+
   const LoadingSkeleton = () => (
     <Skeleton className="rounded-xl h-24 w-full bg-white/10" />
   );
 
   const ErrorUI = ({ error, onRetry }: { error: string, onRetry: () => void }) => (
     <div className="p-4 bg-destructive/10 text-destructive rounded-xl border border-destructive/30 flex flex-col items-center gap-2">
-      <p>{error}</p>
+      <p className="text-sm font-medium">{error}</p>
       <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
     </div>
   );
 
+  const activityList = Array.isArray(activity.data) ? activity.data : (activity.data?.items || []);
+  const hasActivity = activityList.length > 0;
+  const hasWatchHistory = Array.isArray(watchHistory.data) && watchHistory.data.length > 0;
+
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6 bg-background text-foreground min-h-full rounded-tl-xl border-l border-t border-border">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <Button variant="ghost" onClick={() => navigate("/admin/users")} className="gap-2">
           <ArrowLeft className="w-4 h-4" /> Back to Users
         </Button>
@@ -113,6 +187,9 @@ export default function AdminUserDetailPage() {
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-background border border-border p-6 rounded-xl w-full max-w-md flex flex-col gap-4 shadow-2xl">
             <h2 className="text-xl font-bold">Send Notification</h2>
+            <p className="text-xs text-foreground/60">
+              This posts to the global announcements board tagged for this user. Per-user direct messaging requires a separate backend endpoint.
+            </p>
             <textarea 
               value={notificationMessage}
               onChange={(e) => setNotificationMessage(e.target.value)}
@@ -121,11 +198,9 @@ export default function AdminUserDetailPage() {
             />
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowNotificationModal(false)}>Cancel</Button>
-              <Button onClick={() => {
-                alert(`Notification sent: ${notificationMessage}`);
-                setShowNotificationModal(false);
-                setNotificationMessage("");
-              }}>Send</Button>
+              <Button onClick={sendNotification} disabled={sendingNotification || !notificationMessage.trim()}>
+                {sendingNotification ? "Sending..." : "Send"}
+              </Button>
             </div>
           </div>
         </div>
@@ -139,14 +214,14 @@ export default function AdminUserDetailPage() {
             </div>
             <div className="flex flex-col gap-1.5 text-center md:text-left flex-1">
               <h1 className="text-2xl font-bold tracking-tight">{profile.data.display_name || "Unknown"}</h1>
-              <p className="text-foreground/70">{profile.data.email}</p>
+              <p className="text-foreground/70">{profile.data.email || "No email"}</p>
               <div className="flex flex-wrap items-center gap-2 mt-2 justify-center md:justify-start">
                 <Badge variant={profile.data.role === 'admin' ? 'default' : 'secondary'} className="uppercase">
-                  {profile.data.role}
+                  {profile.data.role || "user"}
                 </Badge>
                 {profile.data.is_blocked && <Badge variant="destructive">BLOCKED</Badge>}
-                <span className="text-sm text-foreground/50 ml-2">Joined: {new Date(profile.data.created_at).toLocaleDateString()}</span>
-                {profile.data.last_active && <span className="text-sm text-foreground/50 ml-2">Active: {new Date(profile.data.last_active).toLocaleString()}</span>}
+                <span className="text-sm text-foreground/50 ml-2">Joined: {safeDateShort(profile.data.created_at)}</span>
+                {profile.data.last_active && <span className="text-sm text-foreground/50 ml-2">Active: {safeDate(profile.data.last_active)}</span>}
               </div>
             </div>
           </CardContent>
@@ -193,7 +268,7 @@ export default function AdminUserDetailPage() {
                           d.setHours(0,0,0,0);
                           if (d.getTime() === date.getTime()) count++;
                         };
-                        (activity.data?.items || activity.data || []).forEach(checkEvt);
+                        activityList.forEach(checkEvt);
                         (watchHistory.data || []).forEach(checkEvt);
 
                         let color = "bg-black/20 border border-white/5";
@@ -208,7 +283,7 @@ export default function AdminUserDetailPage() {
                             className={`w-3.5 h-3.5 md:w-4 md:h-4 rounded-sm ${color} transition-all duration-200 hover:ring-2 hover:ring-foreground group relative cursor-pointer`}
                           >
                             <div className="absolute opacity-0 group-hover:opacity-100 bg-popover text-popover-foreground text-xs p-2 rounded bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap z-10 pointer-events-none shadow-xl border border-border">
-                              {date.toLocaleDateString()}: <span className="font-bold">{count}</span> activities
+                              {safeDateShort(date.toISOString())}: <span className="font-bold">{count}</span> activities
                             </div>
                           </div>
                         );
@@ -232,9 +307,9 @@ export default function AdminUserDetailPage() {
           <TabsContent value="activity" className="m-0 focus:outline-none bg-surface/30 border border-border p-6 rounded-xl">
             {activity.loading ? <LoadingSkeleton /> : activity.error ? <ErrorUI error={activity.error} onRetry={() => fetchData(`/api/admin/users/${userId}/activity?page=1&limit=50`, setActivity, 'activity')} /> : (
               <div className="relative pl-6 sm:pl-8 border-l-2 border-border/50 py-4 max-w-4xl">
-                {(activity.data?.items || activity.data || []).map((item: any, idx: number) => {
+                {activityList.map((item: any, idx: number) => {
                   let color = "bg-gray-500 border-gray-400";
-                  let actionName = item.action || "Unknown Action";
+                  const actionName = item.action || "Unknown Action";
                   if (actionName.includes("login")) color = "bg-emerald-500 border-emerald-400";
                   else if (actionName.includes("stream")) color = "bg-blue-500 border-blue-400";
                   else if (actionName.includes("catalog") || actionName.includes("view")) color = "bg-purple-500 border-purple-400";
@@ -247,7 +322,7 @@ export default function AdminUserDetailPage() {
                         <Badge variant="outline" className={`shrink-0 ${color.replace('bg-', 'text-').replace('border-', 'border-').split(' ')[1]}`}>
                           {actionName}
                         </Badge>
-                        <span className="text-xs font-medium text-foreground/50">{new Date(item.created_at).toLocaleString()}</span>
+                        <span className="text-xs font-medium text-foreground/50">{safeDate(item.created_at)}</span>
                       </div>
                       {item.details && Object.keys(item.details).length > 0 && (
                         <div className="text-xs text-foreground/70 bg-black/20 border border-white/5 p-3 rounded-lg mt-2 overflow-x-auto whitespace-pre-wrap font-mono shadow-inner">
@@ -257,7 +332,7 @@ export default function AdminUserDetailPage() {
                     </div>
                   );
                 })}
-                {(!activity.data || (Array.isArray(activity.data) ? activity.data : activity.data.items).length === 0) && <p className="text-foreground/50 italic">No activity recorded</p>}
+                {!hasActivity && <p className="text-foreground/50 italic">No activity recorded</p>}
               </div>
             )}
           </TabsContent>
@@ -294,12 +369,12 @@ export default function AdminUserDetailPage() {
                               <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500 font-bold shadow-sm">✓</span> 
                               : <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-foreground/10 text-foreground/40 font-bold shadow-sm">✗</span>}
                           </td>
-                          <td className="px-6 py-4 text-foreground/70">{new Date(item.watched_at).toLocaleString()}</td>
+                          <td className="px-6 py-4 text-foreground/70">{safeDate(item.watched_at)}</td>
                           <td className="px-6 py-4 text-right font-mono">{item.times_watched || 1}</td>
                         </tr>
                       )
                     })}
-                    {(!watchHistory.data || watchHistory.data.length === 0) && (
+                    {!hasWatchHistory && (
                       <tr><td colSpan={5} className="px-6 py-8 text-center text-foreground/50">No watch history available</td></tr>
                     )}
                   </tbody>
@@ -312,13 +387,13 @@ export default function AdminUserDetailPage() {
             {notes.loading ? <LoadingSkeleton /> : notes.error ? <ErrorUI error={notes.error} onRetry={() => fetchData(`/api/admin/users/${userId}/notes`, setNotes, 'notes')} /> : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {(notes.data || []).map((note: any) => (
-                  <Card key={note.id} className="cursor-pointer border-border bg-surface hover:border-primary/50 hover:shadow-md transition-all flex flex-col group overflow-hidden" onClick={() => alert(`Showing note: ${note.content}`)}>
+                  <Card key={note.id || Math.random()} className="cursor-pointer border-border bg-surface hover:border-primary/50 hover:shadow-md transition-all flex flex-col group overflow-hidden" onClick={() => alert(`Showing note: ${note.content}`)}>
                     <CardHeader className="p-4 pb-0 space-y-1">
                       <div className="flex justify-between items-start gap-2">
                         <CardTitle className="text-sm font-semibold leading-tight line-clamp-2 group-hover:text-primary transition-colors">{note.video_title || "Unknown Video"}</CardTitle>
                         <MessageSquare className="w-4 h-4 text-foreground/30 shrink-0 mt-0.5" />
                       </div>
-                      <div className="text-[10px] uppercase tracking-wider text-foreground/50 font-medium">{new Date(note.created_at).toLocaleDateString()}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-foreground/50 font-medium">{safeDateShort(note.created_at)}</div>
                     </CardHeader>
                     <CardContent className="p-4 pt-3 flex-1 relative">
                       <p className="text-sm text-foreground/80 line-clamp-4 leading-relaxed font-bangla whitespace-pre-wrap">{note.content}</p>

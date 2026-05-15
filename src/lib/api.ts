@@ -15,7 +15,7 @@ async function fetchWithTimeout(url: string, ms: number, options?: RequestInit):
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const urlStr = input instanceof Request ? input.url : input.toString();
   
-  let response = await fetch(input, init);
+  const response = await fetch(input, init);
 
   if (response.status === 401 && urlStr && !urlStr.includes('supabase.co')) {
     console.log("Got 401, attempting token refresh...");

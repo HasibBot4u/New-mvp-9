@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ export default function AdminLogsPage() {
   const [sourceFilter, setSourceFilter] = useState("All");
   const [timeFilter, setTimeFilter] = useState("24h");
   
-  const fetchLogs = async (showLoading = false) => {
+  const fetchLogs = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
     try {
       let fetchedLogs: any[] = [];
@@ -49,7 +49,7 @@ export default function AdminLogsPage() {
 
       // 2. Fallback to Supabase direct query
       if (usedFallback) {
-        let query = supabase
+        const query = supabase
           .from("activity_logs")
           .select("*, profiles(display_name, email)")
           .order("created_at", { ascending: false })
@@ -80,7 +80,7 @@ export default function AdminLogsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [timeFilter]);
 
   useEffect(() => {
     fetchLogs(true);
@@ -90,7 +90,7 @@ export default function AdminLogsPage() {
       }
     }, 10000);
     return () => clearInterval(interval);
-  }, [isTailing, timeFilter]);
+  }, [isTailing, timeFilter, fetchLogs]);
 
   const getSeverity = (log: any) => {
     const a = (log.action || "").toLowerCase();

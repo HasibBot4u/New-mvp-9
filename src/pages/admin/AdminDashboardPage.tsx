@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdminStats } from "@/hooks/useAdminStats";
 import { useRealtime } from "@/hooks/useRealtime";
@@ -34,7 +34,7 @@ export default function AdminDashboardPage() {
   });
   const [dataLoading, setDataLoading] = useState(true);
 
-  const fetchMetrics = async () => {
+  const fetchMetrics = useCallback(async () => {
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session.session?.access_token;
@@ -52,7 +52,7 @@ export default function AdminDashboardPage() {
     } finally {
       setMetricsLoading(false);
     }
-  };
+  }, []);
 
   const safeQuery = async (queryPromise: any, fallbackData: any = []) => {
     try {
@@ -68,7 +68,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const fetchSupabaseData = async () => {
+  const fetchSupabaseData = useCallback(async () => {
     setDataLoading(true);
     try {
       const today = new Date();
@@ -133,14 +133,14 @@ export default function AdminDashboardPage() {
     } finally {
       setDataLoading(false);
     }
-  };
+  }, []);
 
-  const loadAll = () => {
+  const loadAll = useCallback(() => {
     setMetricsLoading(true);
     setDataLoading(true);
     fetchMetrics();
     fetchSupabaseData();
-  };
+  }, [fetchMetrics, fetchSupabaseData]);
 
   useEffect(() => {
     loadAll();
@@ -149,7 +149,7 @@ export default function AdminDashboardPage() {
       fetchSupabaseData();
     }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadAll, fetchMetrics, fetchSupabaseData]);
 
   const timeAgo = (dateString: string) => {
     if (!dateString) return "";

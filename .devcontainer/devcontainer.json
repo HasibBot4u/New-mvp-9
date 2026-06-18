@@ -1,0 +1,42 @@
+{
+  "name": "NexusEdu - OpenCode",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" }
+  },
+
+  "// postCreateCommand": "Runs ONCE on build. Installs OpenCode (works perfectly on this real Linux), plus your project deps.",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "// remoteEnv": "Injects your 3 provider keys + Cloudflare account id from Codespaces Secrets. NOT committed to the repo.",
+  "remoteEnv": {
+    "OPENROUTER_API_KEY": "${localEnv:OPENROUTER_API_KEY}",
+    "CLOUDFLARE_API_TOKEN": "${localEnv:CLOUDFLARE_API_TOKEN}",
+    "CLOUDFLARE_ACCOUNT_ID": "${localEnv:CLOUDFLARE_ACCOUNT_ID}",
+    "BLUESMINDS_API_KEY": "${localEnv:BLUESMINDS_API_KEY}"
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bascodes.opencode-inofficial",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 1000,
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "opencode.endpoint": "http://127.0.0.1:4096"
+      }
+    }
+  },
+
+  "forwardPorts": [5173, 8000],
+  "portsAttributes": {
+    "5173": { "label": "Vite (frontend)" },
+    "8000": { "label": "FastAPI (backend)" }
+  }
+}

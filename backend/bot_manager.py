@@ -392,7 +392,7 @@ class BotManager:
         
         success = 0
         failed = 0
-        from telegram.error import FloodWait
+        from telegram.error import RetryAfter
         import asyncio
         
         for cid_str in channels:
@@ -406,7 +406,7 @@ class BotManager:
                     parse_mode='HTML'
                 )
                 success += 1
-            except FloodWait as e:
+            except RetryAfter as e:
                 await asyncio.sleep(e.retry_after + 1)
                 try:
                     await self.application.bot.send_message(chat_id=channel_id, text=message, parse_mode='HTML')

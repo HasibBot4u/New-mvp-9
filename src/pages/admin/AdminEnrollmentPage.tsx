@@ -246,10 +246,18 @@ export default function AdminEnrollmentPage() {
     const headers = ["ID", "Code", "Label", "Type", "Target", "Uses", "Max Uses", "Status", "Expires At", "Created At"];
     const rows = filteredCodes.map(c => {
       let parentSubject = "";
+      let targetName = "";
       if (c.cycle_id) {
-         parentSubject = (c.cycles as any)?.subjects?.name || "";
+         const cycles = Array.isArray(c.cycles) ? c.cycles[0] : c.cycles;
+         const subjects = Array.isArray(cycles?.subjects) ? cycles.subjects[0] : cycles?.subjects;
+         parentSubject = subjects?.name || "";
+         targetName = cycles?.name || "";
       } else if (c.chapter_id) {
-         parentSubject = (c.chapters as any)?.cycles?.subjects?.name || "";
+         const chapters = Array.isArray(c.chapters) ? c.chapters[0] : c.chapters;
+         const cycles = Array.isArray(chapters?.cycles) ? chapters.cycles[0] : chapters?.cycles;
+         const subjects = Array.isArray(cycles?.subjects) ? cycles.subjects[0] : cycles?.subjects;
+         parentSubject = subjects?.name || "";
+         targetName = chapters?.name || "";
       }
       
       return [
@@ -257,7 +265,7 @@ export default function AdminEnrollmentPage() {
         c.code,
         c.label || "",
         c.cycle_id ? "Cycle" : "Chapter",
-        parentSubject ? `${parentSubject} > ${c.cycles?.name || c.chapters?.name}` : (c.cycles?.name || c.chapters?.name || ""),
+        parentSubject ? `${parentSubject} > ${targetName}` : targetName,
         c.uses,
       c.max_uses,
       c.is_active ? "Active" : "Inactive",
@@ -546,18 +554,30 @@ export default function AdminEnrollmentPage() {
                              <div className="flex flex-col gap-0.5">
                                {(() => {
                                  let subjectName = "";
+                                 let targetName = "";
                                  if (c.cycle_id) {
-                                   subjectName = (c.cycles as any)?.subjects?.name || "";
+                                   const cycles = Array.isArray(c.cycles) ? c.cycles[0] : c.cycles;
+                                   const subjects = Array.isArray(cycles?.subjects) ? cycles.subjects[0] : cycles?.subjects;
+                                   subjectName = subjects?.name || "";
+                                   targetName = cycles?.name || "";
                                  } else if (c.chapter_id) {
-                                   subjectName = (c.chapters as any)?.cycles?.subjects?.name || "";
+                                   const chapters = Array.isArray(c.chapters) ? c.chapters[0] : c.chapters;
+                                   const cycles = Array.isArray(chapters?.cycles) ? chapters.cycles[0] : chapters?.cycles;
+                                   const subjects = Array.isArray(cycles?.subjects) ? cycles.subjects[0] : cycles?.subjects;
+                                   subjectName = subjects?.name || "";
+                                   targetName = chapters?.name || "";
                                  }
-                                 return subjectName ? (
-                                   <span className="text-[10px] text-foreground-muted uppercase tracking-wider">{subjectName}</span>
-                                 ) : null;
+                                 return (
+                                   <>
+                                     {subjectName && (
+                                       <span className="text-[10px] text-foreground-muted uppercase tracking-wider">{subjectName}</span>
+                                     )}
+                                     <span className="text-xs font-semibold text-foreground">
+                                       {targetName}
+                                     </span>
+                                   </>
+                                 );
                                })()}
-                               <span className="text-xs font-semibold text-foreground">
-                                 {c.cycles?.name || c.chapters?.name}
-                               </span>
                                <span className="text-[10px] text-primary/70 uppercase tracking-wider mt-0.5">{c.cycle_id ? 'Cycle Access' : 'Chapter Access'}</span>
                              </div>
                           </TableCell>

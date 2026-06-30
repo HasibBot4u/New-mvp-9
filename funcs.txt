@@ -1,0 +1,62 @@
+def with_retry(max_retries=3, base_delay=1):
+async def verify_supabase_token(authorization: str) -> dict | None:
+async def resolve_channel(channel_id: int | str) -> bool:
+async def preload_channels():
+async def get_message(channel_id: int, message_id: int):
+async def get_file_info(channel_id: int, message_id: int, video_id: str = None) -> Tuple[int, str]:
+async def _save_file_metadata(video_id: str, size: int, mime: str):
+async def fetch_supabase(path: str, client: httpx.AsyncClient) -> list:
+async def fetch_all_videos(client: httpx.AsyncClient) -> list:
+async def fetch_video_secrets(client: httpx.AsyncClient) -> dict:
+async def refresh_catalog():
+async def ensure_telegram_connected() -> bool:
+async def telegram_watchdog():
+async def _start_telegram_clients():
+async def lifespan(app: FastAPI):
+async def safe_upload_video(channel_id, file_path, caption):
+def get_active_client() -> Optional[Client]:
+async def root():
+async def get_thumbnail(video_id: str, request: Request):
+async def ping():
+async def telegram_webhook(request: Request):
+async def setup_webhook():
+async def health():
+async def channel_health(request: Request, authorization: str = Header(None)):
+async def catalog(request: Request, authorization: str = Header(None)):
+async def force_refresh(request: Request):
+async def warmup(request: Request):
+async def prefetch_video(video_id: str, request: Request):
+async def _stream_telegram(channel_id: int, message_id: int, start: int, end: int, total: int):
+def _parse_range(range_header: str, total: int) -> Tuple[int, int]:
+async def stream_video(video_id: str, request: Request, token: str = None, authorization: str = Header(None)):
+async def internal_log_activity(user_id: str, action: str, details: dict, request: Request):
+async def log_activity(req: ActivityLogReq, request: Request, authorization: str = Header(None)):
+async def verify_admin(request: Request):
+async def delete_user_account(req: DeleteUserReq, request: Request):
+async def admin_generate_chapter_code(req: GenerateChapterCodeReq, request: Request):
+async def batch_progress(req: ProgressBatchReq, request: Request, authorization: str = Header(None)):
+async def _ensure_admin(request: Request) -> str:
+async def admin_get_user_profile(user_id: str, request: Request):
+async def admin_get_user_activity(user_id: str, request: Request, page: int = 1, limit: int = 50):
+async def admin_get_user_watch_history(user_id: str, request: Request):
+async def admin_get_user_stats(user_id: str, request: Request):
+async def admin_get_user_notes(user_id: str, request: Request):
+async def admin_get_user_sessions(user_id: str, request: Request):
+def _ensure_admin_signature(request: Request, payload: str):
+async def _supabase_admin_rpc(method: str, endpoint: str, json_data: dict = None):
+async def admin_create_subject(req: AdminContentMutateReq, request: Request):
+async def admin_update_subject(subject_id: str, req: AdminContentMutateReq, request: Request):
+async def admin_delete_subject(subject_id: str, request: Request):
+async def admin_create_cycle(req: AdminContentMutateReq, request: Request):
+async def admin_update_cycle(cycle_id: str, req: AdminContentMutateReq, request: Request):
+async def admin_delete_cycle(cycle_id: str, request: Request):
+async def admin_create_chapter(req: AdminContentMutateReq, request: Request):
+async def admin_update_chapter(chapter_id: str, req: AdminContentMutateReq, request: Request):
+async def admin_delete_chapter(chapter_id: str, request: Request):
+async def admin_create_video(req: AdminContentMutateReq, request: Request):
+async def admin_update_video(video_id: str, req: AdminContentMutateReq, request: Request):
+async def admin_delete_video(video_id: str, request: Request):
+async def create_announcement(req: AnnouncementReq, request: Request):
+async def list_announcements(request: Request, limit: int = 50):
+async def get_logs(request: Request, limit: int = 200, since: Optional[str] = None):
+async def get_dashboard_metrics(request: Request):

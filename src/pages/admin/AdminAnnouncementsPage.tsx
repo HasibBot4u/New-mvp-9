@@ -2,7 +2,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Megaphone, Send, Calendar, Users, Trash, CheckCircle2, Clock } from "lucide-react";
+import { Megaphone, Send, Users, Trash, CheckCircle2, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -11,11 +11,9 @@ import { apiFetch, API_BASE } from "@/lib/api";
 
 export default function AdminAnnouncementsPage() {
   const [message, setMessage] = useState("");
-  const [target, setTarget] = useState("All Users");
+  const [target, setTarget] = useState("all");
   const [specificEmails, setSpecificEmails] = useState("");
-  const [priority, setPriority] = useState("Normal");
-  const [isScheduling, setIsScheduling] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState("");
+  const [priority, setPriority] = useState("normal");
   const [isSending, setIsSending] = useState(false);
   
   const [recentAnnouncements, setRecentAnnouncements] = useState<any[]>([]);
@@ -57,25 +55,24 @@ export default function AdminAnnouncementsPage() {
     if (message.length > 2000) {
       return toast.error("Message exceeds 2000 characters limit.");
     }
-    if (target === "Specific Users" && !specificEmails.trim()) {
+    if (target === "specific" && !specificEmails.trim()) {
       return toast.error("Please enter specific email addresses.");
-    }
-    if (isScheduling && (!scheduleDate || new Date(scheduleDate) <= new Date())) {
-      return toast.error("Please select a valid future date to schedule.");
     }
 
     const { data: session } = await supabase.auth.getSession();
     const token = session?.session?.access_token;
     
+    // For specific users, we can prefix the target to let the backend know, or just rely on a new field.
+    // The backend just accepts a string for target, so we encode the specific emails in it.
+    const finalTarget = target === "specific" ? `users:${specificEmails}` : target;
+
     const payload = {
       message,
-      target,
-      specific_emails: target === 'Specific Users' ? specificEmails.split(',').map(e => e.trim()).filter(e => e) : undefined,
+      target: finalTarget,
       priority,
-      scheduled_at: isScheduling ? scheduleDate : null
     };
 
-    if (window.confirm(`Are you sure you want to ${isScheduling ? 'schedule' : 'send'} this announcement to ${target}?`)) {
+    if (window.confirm(`Are you sure you want to send this announcement?`)) {
       setIsSending(true);
       try {
         const res = await apiFetch(`${API_BASE}/api/admin/announcements`, {
@@ -91,11 +88,9 @@ export default function AdminAnnouncementsPage() {
           throw new Error("API request failed");
         }
 
-        toast.success(`Announcement ${isScheduling ? 'scheduled' : 'sent'} successfully`);
+        toast.success(`Announcement sent successfully`);
         setMessage("");
         setSpecificEmails("");
-        setIsScheduling(false);
-        setScheduleDate("");
         fetchRecent();
 
       } catch (err: any) {
@@ -122,10 +117,10 @@ export default function AdminAnnouncementsPage() {
   };
 
   const targetMapping: Record<string, string> = {
-    "All Users": "All Users",
-    "Active Users (7 days)": "Active Users",
-    "Inactive Users (30 days)": "Inactive Users",
-    "Specific Users": "Specific Users"
+    "all": "All Users",
+    "active_7d": "Active Users (7 days)",
+    "active_30d": "Inactive Users (30 days)",
+    "specific": "Specific Users"
   };
 
   return (
@@ -154,12 +149,12 @@ export default function AdminAnnouncementsPage() {
                 className="w-full h-10 rounded-md border border-border/50 bg-black/20 px-3 py-1 text-sm shadow-sm transition-colors cursor-pointer text-foreground focus:ring-1 focus:ring-primary"
               >
                 {Object.keys(targetMapping).map(t => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>{targetMapping[t]}</option>
                 ))}
               </select>
             </div>
 
-            {target === "Specific Users" && (
+            {target === "specific" && (
               <div className="space-y-1.5 animate-in slide-in-from-top-1">
                 <label className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">Email Addresses (comma-separated)</label>
                 <Input 
@@ -178,9 +173,9 @@ export default function AdminAnnouncementsPage() {
                 onChange={(e) => setPriority(e.target.value)}
                 className="w-full h-10 rounded-md border border-border/50 bg-black/20 px-3 py-1 text-sm shadow-sm transition-colors cursor-pointer text-foreground focus:ring-1 focus:ring-primary"
               >
-                <option value="Normal">Normal Default</option>
-                <option value="High">High Priority</option>
-                <option value="Urgent">Urgent (Requires Action)</option>
+                <option value="normal">Normal Default</option>
+                <option value="high">High Priority</option>
+                <option value="urgent">Urgent (Requires Action)</option>
               </select>
             </div>
 
@@ -202,23 +197,12 @@ export default function AdminAnnouncementsPage() {
             {/* Actions */}
             <div className="pt-2 flex flex-col sm:flex-row gap-3 border-t border-border/30 mt-4">
               <Button 
-                onClick={() => {
-                  toast.info("Scheduling is coming soon");
-                }} 
-                variant="outline" 
-                className="flex-1 h-10 font-medium tracking-wide"
-                disabled={isSending}
-              >
-                <Calendar className="w-4 h-4 mr-2" /> 
-                Schedule
-              </Button>
-              <Button 
                 onClick={handleSend}
                 disabled={isSending || message.length < 10}
                 className="flex-1 h-10 font-medium tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-lg"
               >
                 <Send className="w-4 h-4 mr-2" /> 
-                {isSending ? "Sending..." : "Send Immediately"}
+                {isSending ? "Publishing..." : "Publish"}
               </Button>
             </div>
 
@@ -261,9 +245,9 @@ export default function AdminAnnouncementsPage() {
                         <TableCell className="p-4 align-top max-w-[200px]">
                           <p className="text-sm font-medium text-foreground/90 truncate mb-1">{msg}</p>
                           <div className="flex gap-2 items-center">
-                            {a.priority === 'Urgent' ? (
+                            {a.priority === 'urgent' ? (
                               <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-500 border-red-500/30">Urgent</Badge>
-                            ) : a.priority === 'High' ? (
+                            ) : a.priority === 'high' ? (
                               <Badge variant="outline" className="text-[10px] bg-yellow-500/10 text-yellow-500 border-yellow-500/30">High</Badge>
                             ) : (
                               <Badge variant="outline" className="text-[10px] bg-surface border-border">Normal</Badge>

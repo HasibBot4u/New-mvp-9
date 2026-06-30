@@ -73,6 +73,7 @@ export default function DashboardPage() {
           .eq("user_id", user.id).eq("completed", false).gt("progress_seconds", 0)
           .order("updated_at", { ascending: false }).limit(6),
         sb.from("announcements").select("*").eq("is_active", true)
+          .or(`target.eq.all,target.eq.active_7d,target.eq.active_30d,target.eq.user:${user.id},target.like.*${user.email}*`)
           .order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(3),
         sb.from("live_classes").select("id, title, title_bn, scheduled_at, meeting_url, stream_url")
           .eq("is_active", true).gt("scheduled_at", new Date().toISOString())

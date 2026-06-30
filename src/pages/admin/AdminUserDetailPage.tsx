@@ -140,8 +140,8 @@ export default function AdminUserDetailPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: `[To User ${userId}] ${notificationMessage}`,
-          target: "all",
+          message: notificationMessage,
+          target: `user:${userId}`,
           priority: "high"
         })
       });

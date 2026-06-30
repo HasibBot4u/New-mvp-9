@@ -26,12 +26,25 @@ export default function AdminLogsPage() {
       let fetchedLogs: any[] = [];
       let usedFallback = false;
 
+      // Calculate time boundaries
+      const now = new Date().getTime();
+      let cutOffTime = 0;
+      if (timeFilter === "1h") cutOffTime = now - 60 * 60 * 1000;
+      else if (timeFilter === "24h") cutOffTime = now - 24 * 60 * 60 * 1000;
+      else if (timeFilter === "7d") cutOffTime = now - 7 * 24 * 60 * 60 * 1000;
+      else if (timeFilter === "30d") cutOffTime = now - 30 * 24 * 60 * 60 * 1000;
+      
+      const isoCutoff = cutOffTime > 0 ? new Date(cutOffTime).toISOString() : null;
+
       // 1. Try fetching from the API endpoint
       try {
         const { data: session } = await supabase.auth.getSession();
         const token = session?.session?.access_token;
         
-        const res = await apiFetch(`${API_BASE}/api/admin/logs?limit=200`, {
+        let url = `${API_BASE}/api/admin/logs?limit=200`;
+        if (isoCutoff) url += `&since=${isoCutoff}`;
+        
+        const res = await apiFetch(url, {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -49,29 +62,35 @@ export default function AdminLogsPage() {
 
       // 2. Fallback to Supabase direct query
       if (usedFallback) {
-        const query = supabase
+        let query = supabase
           .from("activity_logs")
           .select("*, profiles(display_name, email)")
           .order("created_at", { ascending: false })
           .limit(200); // Fetch more so local filtering works well
+          
+        if (isoCutoff) {
+          query = query.gte("created_at", isoCutoff);
+        }
         
         const { data, error } = await query;
-        if (error) throw error;
-        if (data) {
+        if (error) {
+          console.warn("Logs join failed (likely RLS), retrying without profiles", error);
+          let fallbackQuery = supabase
+            .from("activity_logs")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(200);
+            
+          if (isoCutoff) {
+            fallbackQuery = fallbackQuery.gte("created_at", isoCutoff);
+          }
+          
+          const { data: rawData, error: rawError } = await fallbackQuery;
+          if (rawError) throw rawError;
+          if (rawData) fetchedLogs = rawData;
+        } else if (data) {
           fetchedLogs = data;
         }
-      }
-
-      // Apply time filter locally
-      const now = new Date().getTime();
-      let cutOffTime = 0;
-      if (timeFilter === "1h") cutOffTime = now - 60 * 60 * 1000;
-      else if (timeFilter === "24h") cutOffTime = now - 24 * 60 * 60 * 1000;
-      else if (timeFilter === "7d") cutOffTime = now - 7 * 24 * 60 * 60 * 1000;
-      else if (timeFilter === "30d") cutOffTime = now - 30 * 24 * 60 * 60 * 1000;
-
-      if (cutOffTime > 0) {
-        fetchedLogs = fetchedLogs.filter(log => new Date(log.created_at).getTime() >= cutOffTime);
       }
 
       setLogs(fetchedLogs);

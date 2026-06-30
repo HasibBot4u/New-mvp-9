@@ -28,7 +28,6 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, Response, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from pyrogram import Client
@@ -770,25 +769,10 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class ConditionalGZipMiddleware:
-    def __init__(self, app, minimum_size: int = 1000):
-        self.app = app
-        self.gzip = GZipMiddleware(app, minimum_size=minimum_size)
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            path = scope.get("path", "")
-            if path.startswith("/api/stream/"):
-                await self.app(scope, receive, send)
-                return
-        await self.gzip(scope, receive, send)
-
-
 app.add_middleware(TimeoutMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(BodySizeLimitMiddleware, max_upload_size=50 * 1024 * 1024)
-app.add_middleware(ConditionalGZipMiddleware, minimum_size=1000)
 
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "https://nexusedu.netlify.app").split(",")
 app.add_middleware(
@@ -1254,9 +1238,11 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
         if not tg_client:
             raise HTTPException(status_code=503, detail="No active Pyrogram client found")
 
-        message = await get_message(channel_id, message_id)
-        if not message:
-            raise HTTPException(status_code=404, detail="Telegram message not found")
+        try:
+            message = await get_message(channel_id, message_id)
+        except Exception as e:
+            logger.error(f"[Stream Error] {e}")
+            raise HTTPException(status_code=404, detail="Telegram message failed to load")
 
         media = message.video or message.document
         if not media:
@@ -1386,6 +1372,7 @@ class GenerateChapterCodeReq(BaseModel):
     notes: Optional[str] = ""
     label: Optional[str] = ""
     max_uses: int = 1
+    count: int = 1
 
 
 @app.post("/api/admin/verify")
@@ -1498,12 +1485,25 @@ async def admin_generate_chapter_code(req: GenerateChapterCodeReq, request: Requ
     if not is_admin:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    secure_code = f"{generate_secure_hex(3)}-{generate_secure_hex(3)}"
-
     try:
         supabase_url = secrets_manager.get_secret("supabase_url")
         supabase_key = secrets_manager.get_secret("supabase_service_key")
         async with httpx.AsyncClient() as client:
+            codes_to_insert = []
+            for _ in range(req.count):
+                secure_code = f"{generate_secure_hex(3)}-{generate_secure_hex(3)}"
+                codes_to_insert.append({
+                    "chapter_id": req.chapter_id if req.type == "chapter" else None,
+                    "cycle_id": req.cycle_id if req.type == "cycle" else None,
+                    "code": secure_code,
+                    "max_uses": req.max_uses,
+                    "notes": req.notes,
+                    "label": req.label,
+                    "generated_by": user['sub'],
+                    "created_by": user['sub'],
+                    "created_at": datetime.utcnow().isoformat() + "Z"
+                })
+            
             resp = await client.post(
                 f"{supabase_url}/rest/v1/enrollment_codes",
                 headers={
@@ -1512,19 +1512,10 @@ async def admin_generate_chapter_code(req: GenerateChapterCodeReq, request: Requ
                     "Content-Type": "application/json",
                     "Prefer": "return=minimal"
                 },
-                json={
-                    "chapter_id": req.chapter_id if req.type == "chapter" else None,
-                    "cycle_id": req.cycle_id if req.type == "cycle" else None,
-                    "code": secure_code,
-                    "max_uses": req.max_uses,
-                    "notes": req.notes,
-                    "label": req.label,
-                    "generated_by": user['sub'],
-                    "created_by": user['sub']
-                }
+                json=codes_to_insert
             )
             resp.raise_for_status()
-            return {"code": secure_code}
+            return {"codes": [c["code"] for c in codes_to_insert]}
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -1723,6 +1714,20 @@ async def admin_get_user_stats(user_id: str, request: Request):
             logs_count = len(resp_logs.json()) if resp_logs.status_code == 200 else 0
             engagement_score = min(100, logs_count + videos_completed * 5)
             
+            logs = resp_logs.json() if resp_logs.status_code == 200 else []
+            logs.sort(key=lambda x: x.get("created_at") or "")
+            sessions = 0
+            last_time = None
+            from dateutil import parser
+            for lg in logs:
+                try:
+                    dt = parser.parse(lg.get("created_at")).timestamp()
+                    if not last_time or (dt - last_time) > 1800:
+                        sessions += 1
+                    last_time = dt
+                except Exception:
+                    pass
+            
             stats = {
                 "total_watch_time": total_watch_time,
                 "videos_completed": videos_completed,
@@ -1730,7 +1735,8 @@ async def admin_get_user_stats(user_id: str, request: Request):
                 "total_videos_enrolled": len(history),
                 "engagement_score": engagement_score,
                 "favorite_subject": "N/A",
-                "peak_study_hour": "N/A"
+                "peak_study_hour": "N/A",
+                "total_sessions": max(1, sessions)
             }
             return JSONResponse(stats)
     except Exception as e:
@@ -1971,9 +1977,12 @@ async def list_announcements(request: Request, limit: int = 50):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/admin/logs")
-async def get_logs(request: Request, limit: int = 200):
+async def get_logs(request: Request, limit: int = 200, since: Optional[str] = None):
     await _ensure_admin(request)
-    resp = await _supabase_admin_rpc("GET", f"activity_logs?select=*,profiles(email,display_name)&order=created_at.desc&limit={limit}")
+    url = f"activity_logs?select=*,profiles(email,display_name)&order=created_at.desc&limit={limit}"
+    if since:
+        url += f"&created_at=gte.{since}"
+    resp = await _supabase_admin_rpc("GET", url)
     return resp
 
 @app.get("/api/admin/dashboard/metrics")
@@ -2027,7 +2036,6 @@ async def get_dashboard_metrics(request: Request):
 
             # Real Telegram channel health
             try:
-                from backend.main import CHANNEL_MAP, get_active_client
                 client_tg = get_active_client()
                 if client_tg:
                     tg_health = []

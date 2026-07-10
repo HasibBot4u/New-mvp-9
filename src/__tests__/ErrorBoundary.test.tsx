@@ -12,11 +12,11 @@ describe('ErrorBoundary', () => {
     // Suppress console.error for this expected error in test
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    expect(() => render(
+    render(
       <ErrorBoundary>
         <ThrowError />
       </ErrorBoundary>
-    )).toThrow();
+    );
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
     expect(screen.getByText('Test Error')).toBeInTheDocument();

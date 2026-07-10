@@ -769,15 +769,30 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class GlobalExceptionHandlerMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as e:
+            logger.error(f"[GlobalException] Unhandled error: {e}")
+            logger.error(traceback.format_exc())
+            return JSONResponse(
+                {"success": False, "error": "Internal Server Error", "data": None},
+                status_code=500
+            )
+
+app.add_middleware(GlobalExceptionHandlerMiddleware)
 app.add_middleware(TimeoutMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(BodySizeLimitMiddleware, max_upload_size=50 * 1024 * 1024)
 
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "https://nexusedu.netlify.app").split(",")
+from backend.config import settings
+
+ALLOWED_ORIGINS = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS", "HEAD", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Range", "Accept-Ranges", "X-Admin-Token", "X-Admin-Signature", "X-Admin-Timestamp"],
@@ -817,7 +832,32 @@ def get_active_client() -> Optional[Client]:
     return None
 
 
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Histogram
+
+REQUEST_COUNT = Counter("request_count", "Total request count", ["method", "endpoint", "http_status"])
+REQUEST_LATENCY = Histogram("request_latency_seconds", "Request latency", ["method", "endpoint"])
+
+class PrometheusMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        import time
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, http_status=response.status_code).inc()
+        REQUEST_LATENCY.labels(method=request.method, endpoint=request.url.path).observe(process_time)
+        return response
+
+app.add_middleware(PrometheusMiddleware)
+
 # ─── ENDPOINTS ────────────────────────────────────────────────
+
+@app.get("/health")
+async def basic_health():
+    return {"status": "healthy"}
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():

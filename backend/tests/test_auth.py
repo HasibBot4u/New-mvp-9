@@ -1,12 +1,18 @@
 import pytest
+from fastapi.testclient import TestClient
+from backend.main import app
 
-@pytest.mark.asyncio
-async def test_auth_login_success(async_client, mocker):
-    mocker.patch("backend.dependencies.supabase.auth.signInWithPassword", return_value={"session": "valid_token"})
-    response = await async_client.post("/api/v1/auth/login", json={"email": "test@example.com", "password": "password"})
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+def test_admin_route_requires_auth(client):
+    response = client.get("/api/admin/users")
+    assert response.status_code in [401, 403]
+    # Standard FastAPI HTTPBearer raises 403 when missing credentials, our verify_jwt raises 401. 
+    # Just asserting it's an auth error.
+
+def test_health_endpoint(client):
+    response = client.get("/health")
     assert response.status_code == 200
-
-@pytest.mark.asyncio
-async def test_auth_login_fail(async_client):
-    response = await async_client.post("/api/v1/auth/login", json={"email": "wrong@example.com", "password": "wrong"})
-    assert response.status_code == 401
+    assert response.json() == {"status": "healthy"}

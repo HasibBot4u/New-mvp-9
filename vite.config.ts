@@ -20,9 +20,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['lucide-react', 'clsx', 'tailwind-merge'],
-          three: ['three', '@react-three/fiber', '@react-three/drei']
+          react: ['react', 'react-dom'],
+          vendor: ['react-router-dom', 'lucide-react', 'axios']
         }
       }
     }

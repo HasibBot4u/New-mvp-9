@@ -1,9 +1,7 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
-  children?: ReactNode;
+  children: ReactNode;
 }
 
 interface State {
@@ -28,27 +26,15 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-background flex items-center justify-center p-4">
-          <div role="alert" className="bg-background-elevated rounded-xl shadow-sm border border-border p-8 max-w-md w-full text-center">
-            <div className="mx-auto w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
-              <AlertTriangle className="w-8 h-8 text-red-500" />
-            </div>
-            
-            <h2 className="text-xl font-bold text-foreground mb-4">
-              Something went wrong. Please refresh.
-            </h2>
-            <p className="text-foreground-muted mb-8 text-sm">
-              We encountered an unexpected error, such as an authentication problem or network issue.
-            </p>
-
-            <Button
-              onClick={() => window.location.reload()}
-              className="w-full flex items-center justify-center space-x-2"
-            >
-              <RefreshCw className="w-5 h-5 mr-2" />
-              <span>Refresh</span>
-            </Button>
-          </div>
+        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 text-gray-900 p-4">
+          <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
+          <p className="text-red-500 mb-6">{this.state.error?.message}</p>
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+            onClick={() => window.location.reload()}
+          >
+            Reload Page
+          </button>
         </div>
       );
     }

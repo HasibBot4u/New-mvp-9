@@ -1,21 +1,16 @@
 services:
   - type: web
-    name: nexusedu-backend
-    env: docker
-    region: singapore
-    plan: free
-    rootDir: backend
-    dockerFilePath: Dockerfile
+    name: backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: TELEGRAM_API_ID
-        sync: false
-      - key: TELEGRAM_API_HASH
-        sync: false
-      - key: PYROGRAM_SESSION_STRING
-        sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_KEY
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    healthCheckPath: /health
+
+  - type: web
+    name: frontend-static
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist

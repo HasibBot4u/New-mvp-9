@@ -2,8 +2,13 @@ import os
 import hmac
 import hashlib
 import time
-from typing import Optional
+from typing import Optional, Dict, Any
 import secrets
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
+from backend.config import settings
 
 class SecretsManager:
     """Provides a centralized place to hold and rotate secrets if necessary."""
@@ -51,4 +56,40 @@ def verify_admin_signature(signature: str, payload: str, timestamp: str) -> bool
 def generate_secure_hex(length: int = 6) -> str:
     """Replaces md5(random()) with a cryptographically secure hex generator."""
     return secrets.token_hex(length).upper()
+
+
+security = HTTPBearer()
+
+def verify_jwt(token: str) -> Dict[str, Any]:
+    try:
+        secret = settings.jwt_secret.get_secret_value()
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        
+        exp = payload.get("exp")
+        if exp and time.time() > exp:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+    token = credentials.credentials
+    return verify_jwt(token)
+
+def require_admin(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    role = current_user.get("role")
+    if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return current_user
 

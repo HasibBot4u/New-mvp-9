@@ -1,4 +1,6 @@
 User-agent: *
-Allow: /
+Disallow: /api/
 Disallow: /admin/
-Sitemap: https://nexusedu.app/sitemap.xml
+Allow: /
+
+Sitemap: https://nexusedu.com/sitemap.xml

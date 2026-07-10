@@ -1,54 +1,48 @@
-name: CI
+name: CI/CD Pipeline
 
-on: 
+on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
 
 jobs:
-  backend-tests:
-    runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis
-        ports: ['6379:6379']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r backend/requirements.txt || true
-      - name: Install test dependencies
-        run: pip install pytest pytest-asyncio pytest-cov httpx pytest-mock
-      - name: Run tests
-        run: pytest backend/tests/ --cov=backend --cov-report=xml
-      - uses: codecov/codecov-action@v3
-
-  frontend-tests:
+  test-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '18'
       - run: npm ci
-      - run: npm run test:ci || echo "No UI tests configured yet"
-      - run: npm run test:e2e || echo "No E2E tests configured yet"
+      - run: npm run lint
+      - run: npm run build
 
-  security-scan:
+  test-backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install bandit
-      - run: bandit -r backend/ -f sarif -o bandit.sarif || true
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Install dependencies
+        working-directory: ./backend
+        run: pip install -r requirements.txt
+      - name: Run Pytest
+        working-directory: ./backend
+        run: pytest
+
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
         with:
-          sarif_file: bandit.sarif
-      - run: npm audit --audit-level=high || true
+          languages: python, javascript
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3

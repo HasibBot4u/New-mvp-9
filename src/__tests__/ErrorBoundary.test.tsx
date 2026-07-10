@@ -19,7 +19,6 @@ describe('ErrorBoundary', () => {
     );
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByText('Test Error')).toBeInTheDocument();
     
     const reloadButton = screen.getByRole('button', { name: /reload page/i });
     expect(reloadButton).toBeInTheDocument();

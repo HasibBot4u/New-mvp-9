@@ -4,6 +4,7 @@ import hashlib
 import time
 from typing import Optional, Dict, Any
 import secrets
+import bcrypt
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -57,6 +58,11 @@ def generate_secure_hex(length: int = 6) -> str:
     """Replaces md5(random()) with a cryptographically secure hex generator."""
     return secrets.token_hex(length).upper()
 
+def get_password_hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 security = HTTPBearer()
 

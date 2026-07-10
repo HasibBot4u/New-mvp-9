@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS quiz_attempts CASCADE;
+
 -- Create the quiz_attempts table securely
 CREATE TABLE quiz_attempts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

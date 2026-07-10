@@ -96,6 +96,15 @@ const queryClient = new QueryClient({
   },
 });
 
+const FullScreenLoader = () => (
+  <div className="flex h-screen w-full items-center justify-center bg-background">
+    <div className="animate-pulse space-y-4 text-center flex flex-col items-center">
+      <div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+      <p className="text-muted-foreground font-medium">Loading content...</p>
+    </div>
+  </div>
+);
+
 const AppContent = () => {
   const isLoading = useAuthStore(state => state.isLoading);
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
@@ -128,7 +137,7 @@ const AppContent = () => {
 
   return (
     <div className={isDark ? "dark" : ""}>
-      <Suspense fallback={<PageLoader />}>
+      <Suspense fallback={<FullScreenLoader />}>
         <Routes>
           {/* Public */}
           <Route element={<PublicShell />}>

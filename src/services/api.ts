@@ -35,7 +35,7 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use((response) => {
-  if (response.config.method?.toLowerCase() === 'get' && response.config.url) {
+  if (response.config.method?.toLowerCase() === 'get' && response.config.url && response.status === 200) {
     cache.set(response.config.url, {
       data: response.data,
       timestamp: Date.now()

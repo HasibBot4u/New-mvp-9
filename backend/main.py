@@ -774,6 +774,8 @@ class GlobalExceptionHandlerMiddleware(BaseHTTPMiddleware):
         try:
             return await call_next(request)
         except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
             logger.error(f"[GlobalException] Unhandled error: {e}")
             logger.error(traceback.format_exc())
             return JSONResponse(

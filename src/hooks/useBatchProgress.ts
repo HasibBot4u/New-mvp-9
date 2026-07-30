@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { API_BASE_URL } from '@/config/env';
 
 export interface ProgressUpdate {
   video_id: string;
@@ -32,8 +33,7 @@ export function useBatchProgress() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) return;
 
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-        const res = await fetch(`${API_BASE}/api/progress/batch`, {
+        const res = await fetch(`${API_BASE_URL}/api/progress/batch`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

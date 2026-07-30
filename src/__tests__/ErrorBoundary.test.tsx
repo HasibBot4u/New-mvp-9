@@ -1,5 +1,4 @@
-import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
@@ -18,10 +17,10 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('একটি সমস্যা দেখা দিয়েছে')).toBeTruthy();
     
-    const reloadButton = screen.getByRole('button', { name: /reload page/i });
-    expect(reloadButton).toBeInTheDocument();
+    const reloadButton = screen.getByRole('button', { name: /পৃষ্ঠা রিফ্রেশ করুন/i });
+    expect(reloadButton).toBeTruthy();
 
     consoleSpy.mockRestore();
   });

@@ -1,13 +1,11 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuthStore } from "@/store/authStore";
 
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { CatalogProvider } from "@/contexts/CatalogContext";
 import { SystemSettingsProvider } from "@/contexts/SystemSettingsContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -15,33 +13,12 @@ import { StudentLayout } from "@/components/layout/StudentLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 
 import { PublicShell } from "@/components/public/PublicShell";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { SkipLink } from "@/components/a11y/SkipLink";
 import { LiveRegion } from "@/components/a11y/LiveRegion";
 import { RouteAnalytics } from "@/components/seo/RouteAnalytics";
 
 import { useDarkMode } from "@/hooks/useDarkMode";
-
-function AuthManager() {
-  useEffect(() => {
-    // a. Call authStore.hydrate() in useEffect ONCE
-    useAuthStore.getState().hydrate();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event) => {
-        const store = useAuthStore.getState();
-        if (event === 'SIGNED_OUT') {
-          store.logout();
-        }
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  return null;
-}
 
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { UpdateToast } from "@/components/UpdateToast";
@@ -106,21 +83,10 @@ const FullScreenLoader = () => (
 );
 
 const AppContent = () => {
-  const isLoading = useAuthStore(state => state.isLoading);
-  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const { user, isLoading } = useAuth();
+  const isAuthenticated = !!user;
   const { isDark, toggle } = useDarkMode();
-  
-  // e. Add a 5-second timeout for hydration: if still loading after 5s, force isLoading = false
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (useAuthStore.getState().isLoading) {
-        useAuthStore.setState({ isLoading: false });
-      }
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, []);
 
-  // b. If isLoading is true, show: "Checking session..." with a timeout message
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-center">
@@ -198,29 +164,26 @@ const AppContent = () => {
 };
 
 const App = () => (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <SystemSettingsProvider>
-        <TooltipProvider>
-          <OfflineBanner />
-          <UpdateToast />
-          <Toaster />
-          <Sonner />
-          <AuthManager />
-          <BrowserRouter>
-            <RouteAnalytics />
-            <SkipLink />
-            <LiveRegion />
-            <AuthProvider>
-              <CatalogProvider>
-                <AppContent />
-              </CatalogProvider>
-            </AuthProvider>
-          </BrowserRouter>
-        </TooltipProvider>
-      </SystemSettingsProvider>
-    </QueryClientProvider>
-  </ErrorBoundary>
+  <QueryClientProvider client={queryClient}>
+    <SystemSettingsProvider>
+      <TooltipProvider>
+        <OfflineBanner />
+        <UpdateToast />
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <RouteAnalytics />
+          <SkipLink />
+          <LiveRegion />
+          <AuthProvider>
+            <CatalogProvider>
+              <AppContent />
+            </CatalogProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </SystemSettingsProvider>
+  </QueryClientProvider>
 );
 
 export default App;

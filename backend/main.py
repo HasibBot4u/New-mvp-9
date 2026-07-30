@@ -627,6 +627,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"[NexusEdu] Telegram credentials present: {HAS_TELEGRAM_CREDS}")
     logger.info(f"[NexusEdu] Supabase URL configured: {bool(SUPABASE_URL)}")
 
+    await rate_limiter.connect()
+
     global supabase_client
     if SUPABASE_URL and SUPABASE_KEY:
         try:

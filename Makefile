@@ -14,16 +14,16 @@ setup:
 
 dev:
 	@echo "Starting development environment..."
-	@npm run dev & cd backend && uvicorn main:app --reload --port 8000
+	@npm run dev & uvicorn backend.main:app --reload --port 8000
 	@wait
 
 test:
 	npm run test:ci || echo "Frontend tests missed"
-	cd backend && pytest
+	pytest
 
 build:
 	npm run build
-	cd backend && docker build -t nexusedu-api .
+	docker build -t nexusedu-api .
 
 deploy:
 	./scripts/deploy.sh

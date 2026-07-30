@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '@/config/env';
+
 type EventName = 
   | 'page_view'
   | 'video_played'
@@ -11,28 +13,32 @@ interface EventProperties {
   [key: string]: any;
 }
 
+const lastWarnedMap: Record<string, number> = {};
+const WARN_THROTTLE_MS = 60000;
+
 class Analytics {
   private isInitialized = false;
 
   init() {
     if (this.isInitialized) return;
     this.isInitialized = true;
-    console.log('[Analytics] Initialized');
+    if (import.meta.env.DEV) {
+      console.log('[Analytics] Initialized (Backend-only)');
+    }
   }
 
   identify(userId: string, traits?: Record<string, string>) {
-    console.log('[Analytics] Identified user', userId, traits);
+    if (import.meta.env.DEV) {
+      console.log('[Analytics] Identified user', userId, traits);
+    }
   }
 
   async track(eventName: EventName | string, properties?: EventProperties) {
     if (!this.isInitialized) this.init();
-    
-    // GA4 tracking
-    if (typeof window !== 'undefined' && 'gtag' in window) {
-      (window as any).gtag('event', eventName, properties);
+
+    if (import.meta.env.DEV) {
+      console.log(`[Analytics] Tracked: ${eventName}`, properties);
     }
-    
-    console.log(`[Analytics] Tracked: ${eventName}`, properties);
 
     // Backend tracking
     try {
@@ -40,8 +46,7 @@ class Analytics {
       const { data: session } = await supabase.auth.getSession();
       const token = session.session?.access_token;
       if (token) {
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-        await fetch(`${baseUrl}/api/activity`, {
+        const res = await fetch(`${API_BASE_URL}/api/activity`, {
           method: 'POST',
           headers: { 
             'Authorization': `Bearer ${token}`,
@@ -49,9 +54,20 @@ class Analytics {
           },
           body: JSON.stringify({ action: eventName, details: properties || {} })
         });
+        if (!res.ok) {
+          const now = Date.now();
+          if (!lastWarnedMap[eventName] || now - lastWarnedMap[eventName] > WARN_THROTTLE_MS) {
+            lastWarnedMap[eventName] = now;
+            console.warn(`[Analytics] Track request failed for '${eventName}' (HTTP ${res.status})`);
+          }
+        }
       }
     } catch (e) {
-      // Ignore background errors
+      const now = Date.now();
+      if (!lastWarnedMap[eventName] || now - lastWarnedMap[eventName] > WARN_THROTTLE_MS) {
+        lastWarnedMap[eventName] = now;
+        console.warn(`[Analytics] Track error for '${eventName}':`, e);
+      }
     }
   }
 }

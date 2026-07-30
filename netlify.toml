@@ -2,6 +2,9 @@
   command = "npm run build"
   publish = "dist"
 
+[build.processing.prerender]
+  enable = true
+
 [build.environment]
   NODE_VERSION = "20"
   PYTHON_VERSION = "3.8"

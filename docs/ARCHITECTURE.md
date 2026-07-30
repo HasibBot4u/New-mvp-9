@@ -1,54 +1,51 @@
 # NexusEdu Architecture
 
 ## 1. System Overview
-NexusEdu is an enterprise-grade EdTech platform designed to serve large concurrent student populations with high-quality video content using a custom Telegram storage backend to radically reduce CDN costs.
+NexusEdu is an EdTech platform designed for HSC students to access video content using Telegram as a video file storage backend.
 
 ## 2. Core Components
 
 ### Frontend (React + Vite + TypeScript)
 - **UI Framework**: Tailwind CSS + shadcn/ui + Radix Primitives
 - **State Management**: React Context + Zustand (for global UI states)
-- **Video Player**: Custom adaptive bit-rate player integrating HLS and raw streaming depending on source.
-- **Real-Time**: Socket.io-client for live classes, chat, and notifications.
+- **Video Player**: Custom video player supporting HLS, direct MP4 streaming, YouTube, and Google Drive links.
 
 ### Backend (FastAPI + Python)
-- **API Framework**: FastAPI for high-performance async request handling.
-- **Real-Time**: python-socketio integration for bi-directional event processing.
+- **API Framework**: FastAPI for request routing and proxying.
 - **Authentication**: Supabase Auth (JWT validation).
-- **Background Workers**: Celery/Redis for Telegram upload pipelining and report generation.
+- **Background Uploads**: In-process background loop in `backend/workers/upload_worker.py`.
+- **Authorization**: Ad-hoc `_ensure_admin(request)` checks in route handlers.
 
 ### Data Layer
-- **Relational Data**: Supabase (PostgreSQL) for Users, Catalog, Progress, and Access Control.
-- **Caching**: Redis for query caching, rate limiting, and temporary file chunks.
-- **Video Storage & Streaming**: Telegram MTProto (Pyrogram) configured as a distributed file store.
+- **Relational Data & Auth**: Supabase (PostgreSQL) for Users, Catalog, Progress, and Access Control.
+- **Video Storage & Streaming**: Telegram MTProto via Pyrogram storing media files in channel messages.
 
 ## 3. High-Level Data Flow
 
 ```mermaid
 graph TD
-    Client[Web Browser / PWA] -->|HTTPS| API[FastAPI Gateway]
-    Client -->|WSS| Socket[Socket.IO Server]
+    Client[Web Browser / PWA] -->|HTTPS| API[FastAPI Backend]
     
     API -->|Read/Write| Supabase[(Supabase/Postgres)]
-    API -->|Cache/PubSub| Redis[(Redis)]
+    API -->|Stream Video Bytes| TG[Telegram API / MTProto]
+    TG -->|Fetch Media| TelegramCloud[(Telegram Servers)]
     
-    API -->|Stream Chunks| TG[Telegram API / MTProto]
-    TG -->|Encrypted Chunks| TelegramCloud[(Telegram Servers)]
-    
-    Socket -->|State/Notify| Redis
-    
-    Admin[Admin Panel] -->|Upload Video| UploadWorker[Upload Pipeline]
-    UploadWorker -->|Process/Encrypt| TG
+    Admin[Admin Panel] -->|Upload Request| API
+    API -->|Queue Upload| UploadWorker[In-Process Upload Worker]
+    UploadWorker -->|Send File| TG
 ```
 
-## 4. Scalability & Performance
-To handle 1M+ active users, the architecture utilizes:
-- **Stateless API tier**: Easily horizontally scaled via Render/Kubernetes.
-- **Session Pooling**: Pyrogram MTProto sessions are pooled and distributed to prevent Telegram API rate limits.
-- **Edge Caching**: Cloudflare CDN for static assets and public catalog pages.
-- **Layered Caching Mechanism**: Local Memory -> Redis -> PostgreSQL.
+## 4. Security & Storage Model
+- **Storage**: Videos are saved directly to Telegram channels via Pyrogram and streamed through backend proxy endpoints.
+- **Row Level Security (RLS)**: Configured in Supabase for direct database queries.
+- **Admin Endpoints**: Guarded by `_ensure_admin` session/token verification in route handlers.
 
-## 5. Security Model
-- **Zero Trust Storage**: Videos stored on Telegram are not raw MP4s; they are chunked, optionally encrypted, and only accessible via proxy through our authenticated API layers.
-- **Row Level Security (RLS)**: Enforced via Supabase for direct database interactions.
-- **Role-Based Access Control (RBAC)**: Handled elegantly in FastAPI dependency injection for students vs. admins.
+## 5. NOT IMPLEMENTED
+The following features are not implemented in this repository:
+- **Background Workers: Celery/Redis**: No Celery setup exists; background tasks use `backend/workers/upload_worker.py`.
+- **Real-Time: python-socketio / socket.io-client**: Socket.io server and client integration are absent.
+- **Caching: Redis query caching & layered caching**: No multi-layer query cache or Redis video chunk caching exists.
+- **1M+ Active Users scaling guarantees**: No specialized multi-node session pooling or distributed caching layer exists.
+- **Edge Caching: Cloudflare CDN**: No Cloudflare CDN caching layer is configured.
+- **Video Chunking & Encryption**: Videos are stored as plain Telegram file attachments without custom chunking or encryption.
+- **RBAC in FastAPI Dependency Injection**: Admin access relies on explicit `_ensure_admin(request)` function calls inside route bodies rather than FastAPI `Depends()` RBAC pipelines.

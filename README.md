@@ -9,6 +9,8 @@ The easiest way to set up the project locally is using the interactive setup scr
 
 ### One-Command Setup
 
+⚠️ **Warning:** The setup script can run database migrations and modify your database. Ensure you run it against a staging Supabase project first.
+
 Run the following command in your terminal:
 ```bash
 python3 scripts/setup.py
@@ -44,4 +46,4 @@ If you prefer to start them manually:
 ### Required Environment Variables
 Please consult the `docs/ENVIRONMENT_VARIABLES.md` file or `.env.example` for the complete list of required environment variables for both frontend and backend.
 
-> **Note:** All database schema changes must go through `supabase/migrations/`. Do NOT use standalone SQL scripts.
+> **Note:** All database schema changes must go through `supabase/migrations/`. Do NOT use standalone SQL scripts. Applied migration files are never edited; changes go in a new timestamped file.

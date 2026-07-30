@@ -56,32 +56,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (u: User): Promise<Profile | null> => {
-    try {
-      const sb = supabase as any;
-      const result: any = await withTimeout(
-        sb.from("profiles").select("*").eq("id", u.id).maybeSingle(),
-        10000,
-        "fetchProfile DB query"
-      );
-      const data = result?.data;
-      const base: Profile = data
-        ? { ...(data as any) }
-        : {
-            id: u.id,
-            email: u.email ?? "",
-            display_name: u.user_metadata?.display_name || u.email?.split("@")[0] || "Student",
-            role: 'user',
-            is_blocked: false,
-          };
+  const fetchProfile = useCallback(async (u: User): Promise<Profile> => {
+    const sb = supabase as any;
+    const result: any = await withTimeout(
+      sb.from("profiles").select("*").eq("id", u.id).maybeSingle(),
+      10000,
+      "fetchProfile DB query"
+    );
 
-      if (!base.role) base.role = 'user';
-
-      return base;
-    } catch (e) {
-      console.error("fetchProfile error:", e);
-      return null;
+    if (result?.error) {
+      throw result.error;
     }
+
+    const data = result?.data;
+    const base: Profile = data
+      ? { ...(data as any) }
+      : {
+          id: u.id,
+          email: u.email ?? "",
+          display_name: u.user_metadata?.display_name || u.email?.split("@")[0] || "Student",
+          role: 'user',
+          is_blocked: false,
+        };
+
+    if (!base.role) base.role = 'user';
+
+    return base;
   }, []);
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(s);
         setUser(s?.user ?? null);
         if (s?.user) {
-          (async () => {
+          setTimeout(async () => {
             try {
               const p = await fetchProfile(s.user);
               setProfile(p);
@@ -101,8 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             } catch (e) {
               console.error("onAuthStateChange profile fetch error:", e);
+              toast.error("Failed to load user profile. Please check your connection.");
             }
-          })();
+          }, 0);
         } else {
           setProfile(null);
         }
@@ -127,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           } catch (e) {
             console.error("getSession profile fetch error:", e);
+            toast.error("Failed to load user profile. Please refresh.");
           }
         }
         setIsLoading(false);

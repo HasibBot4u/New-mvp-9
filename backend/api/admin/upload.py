@@ -1,118 +1,113 @@
-from fastapi import APIRouter, Request, HTTPException, Depends
-from pydantic import BaseModel
+import logging
 from typing import List, Optional
 import httpx
-from backend.core.security import secrets_manager, verify_admin_signature
+from fastapi import APIRouter, Request, HTTPException, Depends
+from pydantic import BaseModel, UUID4, Field
 
-# If we have a central router or separate app
+from backend.dependencies import get_current_admin
+from backend.core.security import secrets_manager
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 class BulkUploadRequest(BaseModel):
     urls: List[str]
-    chapter_id: str
+    chapter_id: UUID4
     
 class BulkMetadataUpdateReq(BaseModel):
-    video_ids: List[str]
+    # UUID4 validation prevents SQL / PostgREST filter injection when constructing URLs
+    video_ids: List[UUID4] = Field(min_length=1, max_length=100)
     updates: dict
     
 class BulkDeleteReq(BaseModel):
-    video_ids: List[str]
+    # UUID4 validation prevents SQL / PostgREST filter injection when constructing URLs
+    video_ids: List[UUID4] = Field(min_length=1, max_length=100)
     confirmation: str
     
 class BulkMoveReq(BaseModel):
-    video_ids: List[str]
-    target_chapter_id: str
-
-async def verify_admin(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    
-    supabase_url = secrets_manager.get_secret("supabase_url")
-    anon_key = secrets_manager.get_secret("supabase_anon_key")
-    
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{supabase_url}/auth/v1/user",
-            headers={"apikey": anon_key, "Authorization": auth_header}
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid token")
-            
-        user = resp.json()
-        resp2 = await client.get(
-            f"{supabase_url}/rest/v1/profiles?select=role&id=eq.{user['id']}",
-            headers={"apikey": anon_key, "Authorization": auth_header}
-        )
-        if resp2.status_code == 200:
-            data = resp2.json()
-            if data and len(data) > 0 and data[0].get("role") == "admin":
-                return user
-                
-    raise HTTPException(status_code=401, detail="Admin required")
+    # UUID4 validation prevents SQL / PostgREST filter injection when constructing URLs
+    video_ids: List[UUID4] = Field(min_length=1, max_length=100)
+    target_chapter_id: UUID4
 
 @router.post("/bulk_url_upload")
-async def bulk_url_upload(req: BulkUploadRequest, request: Request, user=Depends(verify_admin)):
-    # Simple endpoint to push items to upload queue instead of having an admin manually upload to telegram.
-    # The worker would then fetch URL, upload to telegram, and process.
-    # Just an example implementation snippet
-    return {"status": "queued", "count": len(req.urls)}
+async def bulk_url_upload(req: BulkUploadRequest, request: Request, user: dict = Depends(get_current_admin)):
+    raise HTTPException(status_code=501, detail="Bulk URL upload is not implemented")
 
 @router.post("/bulk_delete")
-async def bulk_delete(req: BulkDeleteReq, request: Request, user=Depends(verify_admin)):
-    if req.confirmation != "DELETE_ALL":
-        raise HTTPException(400, "Confirmation string mismatch")
+async def bulk_delete(req: BulkDeleteReq, request: Request, user: dict = Depends(get_current_admin)):
+    # Require confirmation string to explicitly match the count of ids (e.g., "DELETE 3")
+    # so that the client cannot accidentally perform unintended bulk deletes.
+    expected_confirmation = f"DELETE {len(req.video_ids)}"
+    if req.confirmation != expected_confirmation:
+        raise HTTPException(status_code=400, detail=f"Confirmation string mismatch. Expected '{expected_confirmation}'")
         
-    # Logic to bulk delete from 'videos' and 'video_variants'
-    # DB cascade would handle it.
     try:
         supabase_url = secrets_manager.get_secret("supabase_url")
         supabase_key = secrets_manager.get_secret("supabase_service_key")
         
+        # Build filter from validated UUIDs after validation to ensure safe string interpolation
+        ids_param = ",".join(str(v) for v in req.video_ids)
+        
         async with httpx.AsyncClient() as client:
             resp = await client.delete(
-                f"{supabase_url}/rest/v1/videos?id=in.({','.join(req.video_ids)})",
+                f"{supabase_url}/rest/v1/videos?id=in.({ids_param})",
                 headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
             )
             resp.raise_for_status()
             
         return {"status": "deleted"}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Bulk delete failed")
+        raise HTTPException(status_code=500, detail="Bulk operation failed")
 
 @router.post("/bulk_move")
-async def bulk_move(req: BulkMoveReq, request: Request, user=Depends(verify_admin)):
+async def bulk_move(req: BulkMoveReq, request: Request, user: dict = Depends(get_current_admin)):
     try:
         supabase_url = secrets_manager.get_secret("supabase_url")
         supabase_key = secrets_manager.get_secret("supabase_service_key")
         
+        # Build filter from validated UUIDs after validation to ensure safe string interpolation
+        ids_param = ",".join(str(v) for v in req.video_ids)
+        
         async with httpx.AsyncClient() as client:
             resp = await client.patch(
-                f"{supabase_url}/rest/v1/videos?id=in.({','.join(req.video_ids)})",
+                f"{supabase_url}/rest/v1/videos?id=in.({ids_param})",
                 headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}", "Content-Type": "application/json"},
-                json={"chapter_id": req.target_chapter_id}
+                json={"chapter_id": str(req.target_chapter_id)}
             )
             resp.raise_for_status()
             
         return {"status": "moved"}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Bulk move failed")
+        raise HTTPException(status_code=500, detail="Bulk operation failed")
 
 @router.patch("/bulk_update")
-async def bulk_metadata_update(req: BulkMetadataUpdateReq, request: Request, user=Depends(verify_admin)):
-    # Update bulk fields
-        try:
-            supabase_url = secrets_manager.get_secret("supabase_url")
-            supabase_key = secrets_manager.get_secret("supabase_service_key")
+async def bulk_metadata_update(req: BulkMetadataUpdateReq, request: Request, user: dict = Depends(get_current_admin)):
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        
+        # Build filter from validated UUIDs after validation to ensure safe string interpolation
+        ids_param = ",".join(str(v) for v in req.video_ids)
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.patch(
+                f"{supabase_url}/rest/v1/videos?id=in.({ids_param})",
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}", "Content-Type": "application/json"},
+                json=req.updates
+            )
+            resp.raise_for_status()
             
-            async with httpx.AsyncClient() as client:
-                resp = await client.patch(
-                    f"{supabase_url}/rest/v1/videos?id=in.({','.join(req.video_ids)})",
-                    headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}", "Content-Type": "application/json"},
-                    json=req.updates
-                )
-                resp.raise_for_status()
-                
-            return {"status": "updated"}
-        except Exception as e:
-            raise HTTPException(500, str(e))
+        return {"status": "updated"}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Bulk metadata update failed")
+        raise HTTPException(status_code=500, detail="Bulk operation failed")
+

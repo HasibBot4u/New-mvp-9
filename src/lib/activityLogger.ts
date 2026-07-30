@@ -1,20 +1,35 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
+import { API_BASE_URL as API_BASE } from "@/config/env";
 import { supabase } from "@/integrations/supabase/client";
+
+const lastWarnedMap: Record<string, number> = {};
+const WARN_THROTTLE_MS = 60000;
 
 export async function logActivity(action: string, details: object = {}) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return;
 
-    await fetch(`${API_BASE}/api/activity`, {
+    const res = await fetch(`${API_BASE}/api/activity`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ action, details })
-    }).catch(() => {}); // Catch fetch errors silently
+    });
+
+    if (!res.ok) {
+      const now = Date.now();
+      if (!lastWarnedMap[action] || now - lastWarnedMap[action] > WARN_THROTTLE_MS) {
+        lastWarnedMap[action] = now;
+        console.warn(`[activityLogger] Failed to log activity '${action}' (HTTP ${res.status})`);
+      }
+    }
   } catch (e) {
-    // Ignore error so it doesn't spam console
+    const now = Date.now();
+    if (!lastWarnedMap[action] || now - lastWarnedMap[action] > WARN_THROTTLE_MS) {
+      lastWarnedMap[action] = now;
+      console.warn(`[activityLogger] Failed to log activity '${action}':`, e);
+    }
   }
 }

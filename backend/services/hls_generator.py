@@ -1,1 +1,0 @@
-# This file is intentionally left empty as HLS is currently not supported without FFmpeg.

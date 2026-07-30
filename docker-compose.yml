@@ -1,13 +1,11 @@
-version: '3.8'
-
 services:
   backend:
     image: python:3.11-slim
     working_dir: /app
     volumes:
-      - ./backend:/app
+      - .:/app
     command: >
-      bash -c "pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
+      bash -c "pip install -r backend/requirements.txt && uvicorn backend.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     healthcheck:
@@ -18,7 +16,7 @@ services:
       start_period: 40s
 
   frontend:
-    image: node:18-alpine
+    image: node:20-alpine
     working_dir: /app
     volumes:
       - .:/app

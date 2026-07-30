@@ -4,6 +4,7 @@ import sys
 import platform
 import subprocess
 import json
+import time
 
 def run_cmd(cmd, error_msg):
     try:
@@ -51,11 +52,28 @@ def install_frontend_dependencies():
     run_cmd("npm install", "Failed to install Node.js dependencies.")
     print("✅ Frontend dependencies installed.")
 
-def run_db_migrations():
+def run_db_migrations(skip_migrations: bool = False):
+    if os.environ.get("NEXUSEDU_ENV") == "production":
+        print("❌ Cannot run database migrations in production environment (NEXUSEDU_ENV=production).")
+        sys.exit(1)
+
+    if skip_migrations or "--skip-migrations" in sys.argv:
+        print("⏭️ Skipping database migrations (--skip-migrations flag provided).")
+        return
+
     print("⏳ Checking Supabase CLI for database migrations...")
     supabase_v = get_cmd_output("npx supabase --version")
     if supabase_v:
-        print("✅ Supabase CLI detected. Running database migrations...")
+        print("✅ Supabase CLI detected.")
+        status_output = get_cmd_output("npx supabase status")
+        print(f"Linked Supabase project status:\n{status_output if status_output else 'Unable to determine project status'}")
+
+        confirm = input("⚠️ WARNING: This will push migrations to your database. Type 'PUSH' to proceed: ")
+        if confirm.strip() != "PUSH":
+            print("⏭️ Migration push cancelled by user.")
+            return
+
+        print("Running database migrations...")
         try:
             subprocess.run("npx supabase db push", shell=True, check=True)
             print("✅ Database migrations applied.")
@@ -70,19 +88,29 @@ def start_dev_environment():
     print("Frontend will run on http://localhost:5173 (or 3000 depending on Vite config)")
     print("-" * 50)
     
-    # Notice we use Popen to run concurrently
+    frontend = None
+    backend = None
     try:
         frontend = subprocess.Popen("npm run dev", shell=True)
-        # Use uvicorn directly instead of python main.py since the file runs uvicorn under if __name__ == "__main__"
-        backend_cmd = "uvicorn main:app --reload --port 8000"
-        backend = subprocess.Popen(backend_cmd, shell=True, cwd="backend")
+        backend_cmd = "uvicorn backend.main:app --reload --port 8000"
+        backend = subprocess.Popen(backend_cmd, shell=True)
         
-        frontend.wait()
-        backend.wait()
+        while True:
+            f_poll = frontend.poll()
+            b_poll = backend.poll()
+            if f_poll is not None or b_poll is not None:
+                break
+            time.sleep(0.5)
     except KeyboardInterrupt:
         print("\n🛑 Shutting down development servers...")
-        frontend.terminate()
-        backend.terminate()
+    finally:
+        for p in [frontend, backend]:
+            if p and p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    p.kill()
         print("✅ Shutdown complete.")
 
 def main():
@@ -90,6 +118,8 @@ def main():
     print("🎓 NexusEdu Full-Stack Setup Script")
     print("=" * 50)
     
+    skip_migrations = "--skip-migrations" in sys.argv
+
     check_python_version()
     check_node_version()
     
@@ -105,7 +135,7 @@ def main():
             print("⚠️ Please configure missing environment variables.")
             # We fail soft here to not block the script if they just want to see it run partially
     
-    run_db_migrations()
+    run_db_migrations(skip_migrations=skip_migrations)
     
     print("🎉 Setup Complete!")
     choice = input("Do you want to start the development servers now? [y/N]: ")
@@ -114,3 +144,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

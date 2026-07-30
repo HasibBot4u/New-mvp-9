@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
+import { API_BASE_URL } from "@/config/env";
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
+export const API_BASE = API_BASE_URL;
 
 async function fetchWithTimeout(url: string, ms: number, options?: RequestInit): Promise<Response> {
   const ctrl = new AbortController();
@@ -59,8 +60,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
 }
 
 export async function getWorkingBackend(): Promise<string> {
-  const envUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-  return envUrl.replace(/\/$/, '');
+  return API_BASE_URL;
 }
 
 export function clearBackendCache(): void {
@@ -108,7 +108,7 @@ export async function refreshCatalog(): Promise<void> {
 }
 
 export const getStreamUrl = (video: any): string => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
+  const baseUrl = API_BASE_URL;
   if (!baseUrl) return '';
 
   const workerUrl = import.meta.env.VITE_CLOUDFLARE_WORKER_URL;

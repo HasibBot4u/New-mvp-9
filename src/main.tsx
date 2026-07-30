@@ -4,22 +4,9 @@ import { HelmetProvider } from 'react-helmet-async';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
-import { onLCP, onFID, onCLS, onTTFB, onFCP, Metric } from 'web-vitals';
+import { onLCP, onINP, onCLS, onTTFB, onFCP, Metric } from 'web-vitals';
 import { supabase } from './integrations/supabase/client';
-
-/*
-  SQL to create web_vitals table:
-  
-  CREATE TABLE web_vitals (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id),
-    metric_name TEXT NOT NULL,
-    value FLOAT NOT NULL,
-    rating TEXT NOT NULL,
-    page_path TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-*/
+import { API_BASE_URL as API_BASE } from './config/env';
 
 let vitalsQueue: any[] = [];
 let vitalsTimeout: any = null;
@@ -27,36 +14,40 @@ let vitalsTimeout: any = null;
 const sendWebVitals = async () => {
   if (vitalsQueue.length === 0) return;
   
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) {
-    vitalsQueue = []; // clear if not authenticated
-    return;
-  }
-
   const metricsToSend = [...vitalsQueue];
   vitalsQueue = [];
 
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-  
-  try {
-    await fetch(`${API_BASE}/api/activity`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        action: "web_vital",
-        details: { metrics: metricsToSend }
-      })
-    }).catch(() => {});
-  } catch (err) {
-    // ignore
+  const payload = JSON.stringify({
+    action: "web_vital",
+    details: { metrics: metricsToSend }
+  });
+
+  // Flush using sendBeacon if supported (especially for page hide/unload)
+  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    const blob = new Blob([payload], { type: 'application/json' });
+    navigator.sendBeacon(`${API_BASE}/api/activity`, blob);
+  } else {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      await fetch(`${API_BASE}/api/activity`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          'Content-Type': 'application/json'
+        },
+        body: payload
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
   }
 };
 
 function reportWebVitals(metric: Metric) {
-  console.log(`[Web Vital] ${metric.name}: ${metric.value} (Rating: ${metric.rating})`);
+  if (import.meta.env.DEV) {
+    console.log(`[Web Vital] ${metric.name}: ${metric.value} (Rating: ${metric.rating})`);
+  }
   
   vitalsQueue.push({
     metric_name: metric.name,
@@ -73,9 +64,17 @@ function reportWebVitals(metric: Metric) {
   }
 }
 
+if (typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      sendWebVitals();
+    }
+  });
+}
+
 try {
   onLCP(reportWebVitals);
-  onFID(reportWebVitals);
+  onINP(reportWebVitals);
   onCLS(reportWebVitals);
   onTTFB(reportWebVitals);
   onFCP(reportWebVitals);

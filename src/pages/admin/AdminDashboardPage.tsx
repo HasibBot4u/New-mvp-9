@@ -10,6 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import { API_BASE_URL } from "@/config/env";
+import { apiFetch } from "@/lib/api";
 
 export default function AdminDashboardPage() {
   const { isLoading: statsLoading } = useAdminStats();
@@ -38,17 +40,34 @@ export default function AdminDashboardPage() {
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session.session?.access_token;
-      if (!token) return;
+      if (!token) {
+        setMetrics({
+          live_users: 0,
+          active_streams: 0,
+          server_resources: { cpu_percent: 0, memory_percent: 0 }
+        });
+        setMetricsLoading(false);
+        return;
+      }
 
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-      const res = await fetch(`${baseUrl}/api/admin/dashboard/metrics`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/admin/dashboard/metrics`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (res.ok) {
         setMetrics(await res.json());
+      } else {
+        setMetrics({
+          live_users: 0,
+          active_streams: 0,
+          server_resources: { cpu_percent: 0, memory_percent: 0 }
+        });
       }
-    } catch (err) {
-      console.error("Failed to fetch dashboard metrics", err);
+    } catch {
+      setMetrics({
+        live_users: 0,
+        active_streams: 0,
+        server_resources: { cpu_percent: 0, memory_percent: 0 }
+      });
     } finally {
       setMetricsLoading(false);
     }

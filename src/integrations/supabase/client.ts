@@ -1,20 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
-
-// These must be set in Netlify environment variables
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!SUPABASE_URL || SUPABASE_URL.trim() === '') {
-  throw new Error("Missing VITE_SUPABASE_URL environment variable. Please set it in Netlify environment variables.");
-}
-
-if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.trim() === '') {
-  throw new Error("Missing VITE_SUPABASE_ANON_KEY environment variable. Please set it in Netlify environment variables.");
-}
+import { SUPABASE_CONFIG } from '@/config/env';
 
 export const supabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY,
+  SUPABASE_CONFIG.url,
+  SUPABASE_CONFIG.anonKey,
   {
     auth: {
       storage: localStorage,

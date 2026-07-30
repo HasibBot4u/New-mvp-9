@@ -11,8 +11,7 @@ import { useBatchProgress } from "@/hooks/useBatchProgress";
 import { trackEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activityLogger";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
+import { API_BASE_URL as API_BASE } from "@/config/env";
 
 type SourceKind = "youtube" | "drive" | "telegram";
 
@@ -345,7 +344,7 @@ export default function PlayerPage() {
         else if (res.status === 404) setErrorType("404");
         else if (!res.ok) setErrorType("network");
         else setErrorType("unknown");
-      } catch (err) {
+      } catch {
         clearTimeout(timeoutId);
         setErrorType("network");
       }

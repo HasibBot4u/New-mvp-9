@@ -7,13 +7,9 @@ const CATALOG_EXPIRY = 60 * 60 * 1000; // 1 hour
 const THUMBNAILS_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_STATIC).then((cache) => {
-      // Pre-cache app shell
       return cache.addAll([
-        '/',
-        '/index.html',
         '/manifest.json'
       ]);
     })
@@ -35,15 +31,59 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// Stamping custom header 'sw-cached-at' when caching responses because CDN or API responses might omit the HTTP Date header or have inaccurate Date values due to proxying, causing isValid() to miscalculate cache freshness.
+function createCachedResponse(response) {
+  const headers = new Headers(response.headers);
+  headers.set('sw-cached-at', new Date().toUTCString());
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: headers
+  });
+}
+
 function isValid(response, maxAge) {
   if (!response) return false;
-  const fetched = response.headers.get('date');
-  if (!fetched) return true; // without date, assume valid
-  return (new Date().getTime() - new Date(fetched).getTime()) < maxAge;
+  const fetched = response.headers.get('sw-cached-at') || response.headers.get('date');
+  if (!fetched) return false; // Without date/timestamp header, do not assume fresh
+  const time = new Date(fetched).getTime();
+  if (isNaN(time)) return false;
+  return (Date.now() - time) < maxAge;
 }
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Exclude non-GET and authenticated requests from SW cache
+  if (event.request.method !== 'GET' || event.request.headers.has('Authorization')) {
+    return;
+  }
+
+  // Navigation requests (HTML shell) -> Network First, fallback to cache
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseToCache = createCachedResponse(networkResponse.clone());
+          caches.open(CACHE_STATIC).then((cache) => {
+            cache.put('/index.html', responseToCache);
+          });
+        }
+        return networkResponse;
+      }).catch(() => {
+        return caches.match('/index.html').then((cached) => {
+          return cached || new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/html' } });
+        });
+      })
+    );
+    return;
+  }
 
   // 1. Thumbnails (Cache First with 7 day expiry)
   if (url.pathname.match(/\.(png|jpg|jpeg|webp|gif|svg)$/)) {
@@ -54,37 +94,41 @@ self.addEventListener('fetch', (event) => {
         }
         return fetch(event.request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            const responseToCache = networkResponse.clone();
+            const responseToCache = createCachedResponse(networkResponse.clone());
             caches.open(CACHE_THUMBNAILS).then((cache) => {
               cache.put(event.request, responseToCache);
             });
           }
           return networkResponse;
-        }).catch(() => cachedResponse); // fallback to expired if offline
+        }).catch(() => cachedResponse || new Response('Image unavailable offline', { status: 503 }));
       })
     );
     return;
   }
 
   // 2. /api/catalog (Stale-While-Revalidate with 1 hour expiry)
-  if (url.pathname.includes('/api/catalog')) {
+  if (url.pathname.startsWith('/api/catalog')) {
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
         const fetchPromise = fetch(event.request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            const responseToCache = networkResponse.clone();
+            const responseToCache = createCachedResponse(networkResponse.clone());
             caches.open(CACHE_CATALOG).then((cache) => {
               cache.put(event.request, responseToCache);
             });
           }
           return networkResponse;
         }).catch(() => {
-            // Ignore network errors for stale-while-revalidate
+          return cachedResponse || new Response(JSON.stringify({ error: "Offline" }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
         });
-        
-        // If valid, return cache while fetching in background. 
-        // If missing or expired, wait for fetchPromise
-        return (isValid(cachedResponse, CATALOG_EXPIRY) ? cachedResponse : null) || fetchPromise || cachedResponse;
+
+        if (isValid(cachedResponse, CATALOG_EXPIRY)) {
+          return cachedResponse;
+        }
+        return fetchPromise;
       })
     );
     return;
@@ -99,26 +143,21 @@ self.addEventListener('fetch', (event) => {
         }
         return fetch(event.request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            const responseToCache = networkResponse.clone();
+            const responseToCache = createCachedResponse(networkResponse.clone());
             caches.open(CACHE_STATIC).then((cache) => {
               cache.put(event.request, responseToCache);
             });
           }
           return networkResponse;
-        }).catch(() => cachedResponse); // fallback if offline
+        }).catch(() => cachedResponse || new Response('Asset unavailable offline', { status: 503 }));
       })
     );
     return;
   }
 
-  // 4. API: Auth, Progress, etc. (Network First)
+  // 4. All other API endpoints -> Network only (never cached)
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/rest/v1/')) {
-    event.respondWith(
-      fetch(event.request)
-        .catch(() => {
-          return caches.match(event.request);
-        })
-    );
+    event.respondWith(fetch(event.request));
     return;
   }
 

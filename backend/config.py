@@ -1,5 +1,6 @@
+from typing import Optional
 from pydantic_settings import BaseSettings
-from pydantic import SecretStr, HttpUrl
+from pydantic import SecretStr, HttpUrl, ValidationError
 import sys
 import logging
 
@@ -11,11 +12,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     port: int = 8080
     
-    # Frontend URLs
-    vite_supabase_url: HttpUrl
-    vite_supabase_anon_key: SecretStr
-    vite_api_base_url: HttpUrl
-    allowed_origins: str
+    # CORS
+    allowed_origins: str = "http://localhost:5173"
     
     # Backend DB Secrets
     supabase_url: HttpUrl
@@ -25,21 +23,41 @@ class Settings(BaseSettings):
     # JWT and Rate Limiting
     jwt_secret: SecretStr
     rate_limit_per_minute: int = 60
-    admin_token: SecretStr
+    admin_token: Optional[SecretStr] = None
     
     # Telegram
-    telegram_api_id: int
-    telegram_api_hash: SecretStr
-    pyrogram_session_string: SecretStr
-    telegram_bot_token: SecretStr
+    telegram_api_id: Optional[int] = None
+    telegram_api_hash: Optional[SecretStr] = None
+    pyrogram_session_string: Optional[SecretStr] = None
+    telegram_bot_token: Optional[SecretStr] = None
 
     class Config:
         env_file = ".env"
         extra = "ignore"
 
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        if not self.allowed_origins:
+            return ["http://localhost:5173"]
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def telegram_enabled(self) -> bool:
+        has_api_id = self.telegram_api_id is not None and self.telegram_api_id != 0
+        has_api_hash = bool(self.telegram_api_hash and self.telegram_api_hash.get_secret_value())
+        has_session = bool(self.pyrogram_session_string and self.pyrogram_session_string.get_secret_value())
+        return has_api_id and has_api_hash and has_session
+
 try:
     settings = Settings()
-except Exception as e:
-    logger.critical(f"FATAL ERROR: Missing or invalid environment variables. {e}")
+except ValidationError as e:
+    missing_fields = [str(err['loc'][0]) for err in e.errors() if err.get('type') == 'missing']
+    if missing_fields:
+        logger.critical(f"FATAL ERROR: Missing required environment variables: {', '.join(missing_fields)}")
+    else:
+        logger.critical("FATAL ERROR: Invalid environment variable configuration provided.")
+    sys.exit(1)
+except Exception:
+    logger.critical("FATAL ERROR: Failed to load configuration.")
     sys.exit(1)
 

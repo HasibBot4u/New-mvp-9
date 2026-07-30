@@ -13,9 +13,11 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Trigger Render Deploy
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
-          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK }}" ]; then
-            curl "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          if [ -n "$RENDER_DEPLOY_HOOK" ]; then
+            curl "$RENDER_DEPLOY_HOOK"
           else
             echo "RENDER_DEPLOY_HOOK secret not set. Skipping explicitly trigger and assuming Render auto-deployment via GitHub integration."
           fi

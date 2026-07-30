@@ -91,7 +91,7 @@ export default function PricingPage() {
         const err = await res.json();
         toast.error(err.detail || "Invalid enrollment code");
       }
-    } catch (error) {
+    } catch {
       toast.error("Failed to process enrollment code");
     } finally {
       setLoading(false);

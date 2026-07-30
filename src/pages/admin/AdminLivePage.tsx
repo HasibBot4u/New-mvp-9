@@ -60,7 +60,7 @@ export default function AdminLivePage() {
         title: "Notifications Sent", 
         description: `Sent to ${count || 0} subscribed students for class "${cls.title}"!`,
       });
-    } catch (e) {
+    } catch {
       toast({ 
         title: "Notifications Sent", 
         description: `Sent to students for class "${cls.title}"!`,

@@ -17,15 +17,37 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    globals: true
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false
   },
   build: { 
     outDir: 'dist',
+    chunkSizeWarningLimit: 1000,
+    // Note: three.js (~600KB) is heavy and should ideally be lazy-loaded with React.lazy rather than eagerly bundled into manual chunks
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom'],
-          vendor: ['react-router-dom', 'lucide-react', 'axios']
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('three') || id.includes('@react-three')) {
+              return 'three';
+            }
+            if (id.includes('recharts')) {
+              return 'charts';
+            }
+            if (id.includes('pdfjs-dist') || id.includes('react-pdf')) {
+              return 'pdf';
+            }
+            if (id.includes('@radix-ui')) {
+              return 'radix';
+            }
+            if (id.includes('react-router-dom') || id.includes('lucide-react') || id.includes('axios')) {
+              return 'vendor';
+            }
+            if (id.includes('/react/') || id.includes('/react-dom/')) {
+              return 'react';
+            }
+          }
         }
       }
     }

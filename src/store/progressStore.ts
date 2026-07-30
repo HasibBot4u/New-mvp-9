@@ -5,7 +5,7 @@ interface ProgressState {
   completedVideos: Record<string, boolean>;
   setProgress: (videoId: string, progress: number) => void;
   markCompleted: (videoId: string) => void;
-  // TODO: Sync to backend logic (e.g., using apiClient inside a thunk or effect)
+  // TODO: Sync to backend logic (e.g., using apiFetch inside a thunk or effect)
 }
 
 export const useProgressStore = create<ProgressState>((set) => ({

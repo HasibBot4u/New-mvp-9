@@ -24,7 +24,10 @@ export function useAdminStats() {
     const fetchStats = async () => {
       setIsLoading(true);
       try {
-        const { data } = await supabase.rpc('get_admin_stats');
+        const { data, error } = await supabase.rpc('get_admin_stats');
+        if (error) {
+          console.warn("get_admin_stats RPC error:", error);
+        }
         const dbStats = (data as any) || {};
         
         setStats({

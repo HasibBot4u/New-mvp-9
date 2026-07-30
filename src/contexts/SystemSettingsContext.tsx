@@ -12,6 +12,7 @@ export interface SystemSettings {
 interface Ctx {
   settings: SystemSettings;
   isLoading: boolean;
+  isError: boolean;
   refreshSettings: () => Promise<void>;
 }
 
@@ -25,7 +26,11 @@ const DEFAULTS: SystemSettings = {
 const SettingsCtx = createContext<Ctx | undefined>(undefined);
 
 const fetchSettings = async (): Promise<SystemSettings> => {
-  const { data } = await (supabase as any).from("system_settings").select("key, value");
+  const { data, error } = await (supabase as any).from("system_settings").select("key, value");
+  if (error) {
+    console.error("CRITICAL: Failed to fetch system_settings from database:", error);
+    throw error;
+  }
   const next: SystemSettings = { ...DEFAULTS };
   if (Array.isArray(data)) {
     for (const row of data as { key: string; value: any }[]) {
@@ -42,7 +47,7 @@ const fetchSettings = async (): Promise<SystemSettings> => {
 };
 
 export function SystemSettingsProvider({ children }: { children: ReactNode }) {
-  const { data: settings = DEFAULTS, isLoading, refetch } = useQuery({
+  const { data: settings = DEFAULTS, isLoading, isError, refetch } = useQuery({
     queryKey: ['systemSettings'],
     queryFn: fetchSettings,
     staleTime: 5 * 60 * 1000,
@@ -57,7 +62,7 @@ export function SystemSettingsProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SettingsCtx.Provider value={{ settings, isLoading, refreshSettings }}>
+    <SettingsCtx.Provider value={{ settings, isLoading, isError, refreshSettings }}>
       {children}
     </SettingsCtx.Provider>
   );

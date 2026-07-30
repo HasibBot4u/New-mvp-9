@@ -7,9 +7,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCatalog } from "@/contexts/CatalogContext";
 import { format } from "date-fns";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
-if (!API_BASE) throw new Error("VITE_API_BASE_URL is required but not set in environment variables");
-
 const items = [
   { to: "/admin", end: true, icon: LayoutDashboard, label: "Overview" },
   { to: "/admin/users", icon: Users, label: "Users" },

@@ -4,6 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { WakeUpCountdown } from '../WakeUpCountdown';
 import { supabase } from '@/integrations/supabase/client';
+import { API_BASE_URL } from '@/config/env';
 import { getStreamUrl, clearBackendCache, api } from '@/lib/api';
 
 interface VideoPlayerProps {
@@ -124,7 +125,7 @@ export function VideoPlayer({ videoId, sizeMb = 0, onComplete, onTimeUpdate }: V
     try {
       // Wake-up flow
       try {
-        const backend = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
+        const backend = API_BASE_URL;
         const response = await fetchWithTimeout(`${backend}/api/health`, 8000); // Fail fast so WakeUpCountdown takes over
         const health = response.ok ? await response.json() : null;
         const fetchError = !response.ok;

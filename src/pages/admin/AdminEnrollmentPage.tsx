@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://nexusedu-backend-0bjq.onrender.com";
+import { API_BASE_URL as API_BASE } from "@/config/env";
 
 type EnrollmentCode = {
   id: string;

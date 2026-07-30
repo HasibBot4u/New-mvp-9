@@ -5,6 +5,10 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test-frontend:
@@ -14,9 +18,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'npm'
       - run: npm ci
+      - run: npm run typecheck
       - run: npm run lint
+      - run: npm run test:ci
       - run: npm run build
 
   test-backend:
@@ -28,15 +35,14 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dependencies
-        working-directory: ./backend
-        run: pip install -r requirements.txt
+        run: pip install -r backend/requirements-dev.txt
       - name: Run Pytest
-        working-directory: ./backend
-        run: pytest
+        run: pytest backend/tests -v
 
   security-scan:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
     steps:
       - uses: actions/checkout@v4
@@ -46,3 +52,31 @@ jobs:
           languages: python, javascript
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+
+  deploy:
+    needs: [test-frontend, test-backend]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+      - uses: nwtgck/actions-netlify@v3
+        with:
+          publish-dir: './dist'
+          production-branch: main
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-message: "Deploy from GitHub Actions - ${{ github.sha }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

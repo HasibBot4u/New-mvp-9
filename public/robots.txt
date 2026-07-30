@@ -1,6 +1,17 @@
 User-agent: *
-Disallow: /api/
-Disallow: /admin/
+Disallow: /api
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /player
+Disallow: /notes
+Disallow: /progress
+Disallow: /profile
+Disallow: /notifications
+Disallow: /live
+Disallow: /resources
+Disallow: /enrollment
+Disallow: /search
 Allow: /
 
-Sitemap: https://nexusedu.com/sitemap.xml
+# TODO: Replace with actual production domain
+Sitemap: https://YOUR_PRODUCTION_DOMAIN_HERE.com/sitemap.xml

@@ -1,3 +1,4 @@
+# NOTE: GitHub disables scheduled workflows after 60 days of repository inactivity, so this anti-sleep ping will silently stop working.
 name: Keep Backend Alive
 
 # This workflow pings the Render backend every 10 minutes

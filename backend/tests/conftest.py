@@ -1,22 +1,29 @@
-import pytest
-from httpx import AsyncClient
-import pytest_asyncio
-# We will mock the whole client as the main module might not exist yet
-from fastapi import FastAPI
-from backend.config import Settings
+import os
 
-app = FastAPI()
+# Set fallback environment variables so module-level Settings initialization passes
+os.environ.setdefault("SUPABASE_URL", "http://localhost:8000")
+os.environ.setdefault("SUPABASE_ANON_KEY", "test_anon_key")
+os.environ.setdefault("SUPABASE_SERVICE_KEY", "test_service_key")
+os.environ.setdefault("JWT_SECRET", "test_jwt_secret")
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
+from backend.main import app
+
 
 @pytest.fixture
-def mock_settings():
-    return Settings(
-        app_name="NexusEdu Test",
-        environment="test",
-        supabase_url="http://localhost:8000",
-        supabase_anon_key="test_anon_key"
-    )
+def mock_settings(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "test_anon_key")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "test_service_key")
+    monkeypatch.setenv("JWT_SECRET", "test_jwt_secret")
+    from backend.config import Settings
+    return Settings()
+
 
 @pytest_asyncio.fixture
 async def async_client():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client

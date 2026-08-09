@@ -49,16 +49,21 @@ export function useChapterAccess() {
       const fingerprint = await getDeviceFingerprint();
       const userAgent = navigator.userAgent;
       
+      // Privacy fix: ipify leaks client IP to third party. Make it opt-in via VITE_ENABLE_IP_FETCH
+      // Default disabled to avoid external IP leak. Backend already logs IP from request.
       let deviceIp = '';
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 3000);  // 3 second max
-        const ipRes = await fetch('https://api.ipify.org?format=json', { signal: ctrl.signal });
-        clearTimeout(timer);
-        const { ip } = await ipRes.json();
-        deviceIp = ip;
-      } catch {
-        deviceIp = '';  // proceed without IP if fetch fails
+      const enableIpFetch = (import.meta.env.VITE_ENABLE_IP_FETCH === 'true');
+      if (enableIpFetch) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 3000);
+          const ipRes = await fetch('https://api.ipify.org?format=json', { signal: ctrl.signal });
+          clearTimeout(timer);
+          const { ip } = await ipRes.json();
+          deviceIp = ip;
+        } catch {
+          deviceIp = '';
+        }
       }
 
       const deviceInfo = {

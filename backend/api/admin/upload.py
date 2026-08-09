@@ -15,10 +15,23 @@ class BulkUploadRequest(BaseModel):
     urls: List[str]
     chapter_id: UUID4
     
+ALLOWED_BULK_UPDATE_FIELDS = {"title", "title_bn", "description", "description_bn", "is_active", "display_order", "duration", "size_mb", "thumbnail_url"}
+
 class BulkMetadataUpdateReq(BaseModel):
     # UUID4 validation prevents SQL / PostgREST filter injection when constructing URLs
     video_ids: List[UUID4] = Field(min_length=1, max_length=100)
     updates: dict
+
+    def model_post_init(self, __context):
+        # Whitelist validation
+        invalid = [k for k in self.updates.keys() if k not in ALLOWED_BULK_UPDATE_FIELDS]
+        if invalid:
+            raise ValueError(f"Invalid update fields: {invalid}. Allowed: {ALLOWED_BULK_UPDATE_FIELDS}")
+        # Prevent overly large payload
+        import json as _json
+        if len(_json.dumps(self.updates)) > 2048:
+            raise ValueError("updates payload too large (max 2KB)")
+        return super().model_post_init(__context) if hasattr(super(), 'model_post_init') else None
     
 class BulkDeleteReq(BaseModel):
     # UUID4 validation prevents SQL / PostgREST filter injection when constructing URLs

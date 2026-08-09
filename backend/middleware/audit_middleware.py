@@ -23,7 +23,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
             user_id = None
             if hasattr(request.state, "user") and isinstance(request.state.user, dict):
                 user_id = request.state.user.get("id") or request.state.user.get("sub")
-            # TODO: If auth dependencies do not set request.state.user, user_id remains None.
+            # Fixed: _ensure_admin now sets request.state.user, so user_id is captured
 
             bg_task = BackgroundTask(
                 self._log_to_supabase,

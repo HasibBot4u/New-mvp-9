@@ -19,4 +19,4 @@ check_*.cjs
 check_*.mjs
 test_*.js
 /database*.sql
-/fix_*.sql
+/fix_*.sql__pycache__/

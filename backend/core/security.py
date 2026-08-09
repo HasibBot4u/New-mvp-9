@@ -41,21 +41,47 @@ class SecretsManager:
 
 secrets_manager = SecretsManager()
 
+_ADMIN_NONCE_CACHE: dict[str, float] = {}
+_NONCE_MAX = 10000
+
+def _cleanup_nonce_cache():
+    now = time.time()
+    expired = [k for k, exp in _ADMIN_NONCE_CACHE.items() if exp < now]
+    for k in expired:
+        _ADMIN_NONCE_CACHE.pop(k, None)
+    if len(_ADMIN_NONCE_CACHE) > _NONCE_MAX:
+        # Evict oldest
+        oldest = sorted(_ADMIN_NONCE_CACHE.items(), key=lambda x: x[1])[: _NONCE_MAX // 2]
+        for k, _ in oldest:
+            _ADMIN_NONCE_CACHE.pop(k, None)
+
 def verify_admin_signature(signature: str, payload: str, timestamp: str) -> bool:
-    """Verifies HMAC signature for admin requests."""
-    # TODO: There is no nonce, so replay attacks within the 60s window are still possible.
+    """Verifies HMAC signature for admin requests with replay protection via nonce deduplication."""
     try:
         ts = float(timestamp)
     except (ValueError, TypeError):
         return False
 
-    if abs(time.time() - ts) > 60:
+    now = time.time()
+    if abs(now - ts) > 60:
         return False
-        
-    secret = secrets_manager.require_admin_token().encode()
+
+    # Replay protection: signature + timestamp must be unique within window
+    nonce_key = f"{signature}:{timestamp}"
+    _cleanup_nonce_cache()
+    if nonce_key in _ADMIN_NONCE_CACHE:
+        return False
+
+    try:
+        secret = secrets_manager.require_admin_token().encode()
+    except HTTPException:
+        return False
     message = f"{payload}:{timestamp}".encode()
     expected_mac = hmac.new(secret, message, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected_mac, signature)
+    valid = hmac.compare_digest(expected_mac, signature)
+    if valid:
+        _ADMIN_NONCE_CACHE[nonce_key] = now + 70  # keep 70s > 60s window
+    return valid
 
 def generate_secure_hex(length: int = 6) -> str:
     """Replaces md5(random()) with a cryptographically secure hex generator."""

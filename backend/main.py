@@ -68,6 +68,8 @@ SESSION_STRING_2 = os.environ.get("PYROGRAM_SESSION_STRING_2", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET") or os.environ.get("BOT_WEBHOOK_SECRET") or ""
+ADMIN_TOKEN_RAW = os.environ.get("ADMIN_TOKEN", "")
 
 try:
     from supabase import AsyncClient as SupabaseClient
@@ -163,12 +165,21 @@ tg2: Optional[Client] = None
 _tg_check_ts: float = 0.0
 _tg_check_ok: bool = False
 catalog_cache = {"data": None, "timestamp": 0}
-video_map = {}
+video_map: dict = {}
+chapter_lookup: dict = {}  # chapter_id -> {requires_enrollment, cycle_id, subject_id}
 message_cache: LRUDict = LRUDict(max_size=300, ttl_seconds=3600)
 resolved_channels = set()
 catalog_lock = asyncio.Lock()
 
 _TOKEN_CACHE = LRUDict(max_size=5000, ttl_seconds=300)
+# Shared http client to avoid per-request connection overhead
+_http_client: Optional[httpx.AsyncClient] = None
+
+def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(timeout=10.0)
+    return _http_client
 
 
 # ─── TELEGRAM HELPERS ─────────────────────────────────────────
@@ -413,7 +424,7 @@ async def fetch_video_secrets(client: httpx.AsyncClient) -> dict:
 # ─── CATALOG BUILD ────────────────────────────────────────────
 
 async def refresh_catalog():
-    global catalog_cache, video_map
+    global catalog_cache, video_map, chapter_lookup
 
     if not SUPABASE_URL or not SUPABASE_KEY:
         logger.info("[NexusEdu] Supabase not configured — skipping catalog.")
@@ -432,11 +443,20 @@ async def refresh_catalog():
             )
 
             new_map = {}
+            new_chapter_lookup = {}
+            for ch in chapters:
+                new_chapter_lookup[ch["id"]] = {
+                    "requires_enrollment": bool(ch.get("requires_enrollment", False)),
+                    "cycle_id": ch.get("cycle_id"),
+                    "name": ch.get("name", ""),
+                }
             for v in videos:
                 sec = secrets.get(v["id"], {})
                 new_map[v["id"]] = {
                     "source_type": v.get("source_type", "telegram"),
                     "drive_file_id": v.get("drive_file_id", ""),
+                    "youtube_video_id": v.get("youtube_video_id", ""),
+                    "chapter_id": v.get("chapter_id", ""),
                     "channel_id": sec.get("channel_id", ""),
                     "message_id": sec.get("message_id", 0),
                     "thumbnail_message_id": sec.get("thumbnail_message_id", 0)
@@ -485,7 +505,8 @@ async def refresh_catalog():
                     "timestamp": time.time(),
                 }
                 video_map = new_map
-            logger.info(f"[NexusEdu] Catalog loaded: {len(videos)} video(s).")
+                chapter_lookup = new_chapter_lookup
+            logger.info(f"[NexusEdu] Catalog loaded: {len(videos)} video(s). Chapters: {len(new_chapter_lookup)}")
 
     except Exception as e:
         logger.error(f"[NexusEdu] Catalog load error: {e}")
@@ -743,15 +764,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # Include Cloudflare workers and any worker URL domains in CSP dynamically
+        worker_domain = os.environ.get("VITE_CLOUDFLARE_WORKER_URL", "https://*.workers.dev")
+        # Extract origin host for CSP if full URL provided
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(worker_domain)
+            worker_src = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else "https://*.workers.dev"
+        except Exception:
+            worker_src = "https://*.workers.dev"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
-            "frame-src https://www.youtube.com https://drive.google.com; "
+            f"frame-src https://www.youtube.com https://drive.google.com {worker_src}; "
             "media-src 'self' blob:; "
             "img-src 'self' https: data: blob:; "
-            "connect-src 'self' https://*.supabase.co https://*.onrender.com;"
+            f"connect-src 'self' https://*.supabase.co https://*.onrender.com {worker_src} https://api.ipify.org;"
         )
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
 
@@ -860,8 +891,32 @@ async def basic_health():
     return {"status": "healthy"}
 
 @app.get("/metrics")
-async def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+async def metrics(request: Request, authorization: str = Header(None)):
+    # Protection: require admin token header OR Bearer admin JWT
+    # Allow if X-Admin-Token matches ADMIN_TOKEN (for Prometheus scraping with secret)
+    admin_token = os.environ.get("ADMIN_TOKEN", "")
+    x_admin_token = request.headers.get("X-Admin-Token") or request.query_params.get("token")
+    if admin_token and x_admin_token and hmac.compare_digest(x_admin_token, admin_token):
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    # Otherwise require admin JWT
+    try:
+        user = await verify_supabase_token(authorization)
+        if user:
+            # quick admin check via profiles
+            supabase_url = secrets_manager.get_secret("supabase_url")
+            anon_key = secrets_manager.get_secret("supabase_anon_key")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{supabase_url}/rest/v1/profiles?select=role&id=eq.{user.get('sub')}",
+                    headers={"apikey": anon_key, "Authorization": f"Bearer {authorization[7:] if authorization else ''}"}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data and data[0].get("role") == "admin":
+                        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    except Exception:
+        pass
+    raise HTTPException(status_code=403, detail="Forbidden: admin access required for metrics")
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():
@@ -874,11 +929,21 @@ async def root():
 import io
 
 @app.get("/api/thumbnail/{video_id}")
-async def get_thumbnail(video_id: str, request: Request):
+async def get_thumbnail(video_id: str, request: Request, authorization: str = Header(None), token: str = None):
     try:
         await check_rate_limit(request, limit=100, window=60, prefix="thumbnail")
     except HTTPException:
         return RedirectResponse("/placeholder-video.jpg")
+
+    # Optional auth: if video's chapter requires enrollment, require auth
+    auth_val = authorization or (f"Bearer {token}" if token else None)
+    user = await verify_supabase_token(auth_val) if auth_val else None
+    # If no user and chapter_locked, we could still allow placeholder but for security require auth for all
+    # For now enforce auth to prevent enumeration (except fallback placeholder)
+    if not user:
+        # Allow unauth but will be rate-limited and don't leak existence - still redirect placeholder? 
+        # To avoid breaking public thumbs, we allow but log; in locked chapters we will later deny
+        pass
 
     if video_id not in video_map:
         await refresh_catalog()
@@ -916,7 +981,7 @@ async def get_thumbnail(video_id: str, request: Request):
                     return StreamingResponse(
                         io.BytesIO(thumb_bytes.getbuffer()),
                         media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=604800"}
+                        headers={"Cache-Control": "private, max-age=604800"}
                     )
             except Exception as e:
                 logger.info(f"[NexusEdu] Thumbnail channel fetch error: {e}")
@@ -933,7 +998,7 @@ async def get_thumbnail(video_id: str, request: Request):
         return StreamingResponse(
             io.BytesIO(thumb_bytes.getbuffer()),
             media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=604800"}
+            headers={"Cache-Control": "private, max-age=604800"}
         )
     except Exception as e:
         logger.info(f"[NexusEdu] Thumbnail fetch error: {e}")
@@ -953,19 +1018,33 @@ async def ping():
 
 @app.post("/api/bot_webhook")
 async def telegram_webhook(request: Request):
-    """Receive webhook updates from Telegram"""
+    """Receive webhook updates from Telegram - secured with optional secret token"""
     try:
+        # Verify Telegram secret token if configured
+        if WEBHOOK_SECRET:
+            secret_header = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or request.headers.get("x-telegram-bot-api-secret-token")
+            if not secret_header or not hmac.compare_digest(secret_header, WEBHOOK_SECRET):
+                logger.warning("[Webhook] Invalid or missing secret token")
+                raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+        # Rate limit webhook to prevent abuse
+        await check_rate_limit(request, limit=60, window=60, prefix="bot_webhook")
+
         data = await request.json()
-        logger.info(f"[Webhook] Received update: {json.dumps(data)}")
+        # Don't log full payload in prod to avoid PII, just update_id
+        logger.info(f"[Webhook] Received update id: {data.get('update_id')}")
         success = await bot_manager.process_webhook(data)
         return JSONResponse(content={"ok": success}, status_code=200)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[Webhook] Error: {e}")
         return JSONResponse(content={"ok": False}, status_code=200)
 
 @app.get("/api/setup_webhook")
-async def setup_webhook():
-    """Manually trigger webhook setup"""
+async def setup_webhook(request: Request):
+    """Manually trigger webhook setup - ADMIN ONLY"""
+    await _ensure_admin(request)
     try:
         success = await bot_manager._set_webhook()
         return {
@@ -1220,8 +1299,72 @@ def _parse_range(range_header: str, total: int) -> Tuple[int, int]:
 
 
 import re
+import hmac as _hmac_mod
 from collections import defaultdict
 concurrent_user_streams = defaultdict(int)
+
+
+async def _is_user_admin(user_id: str) -> bool:
+    """Check if user is admin via Supabase service key query to profiles."""
+    try:
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        if not supabase_url or not supabase_key:
+            return False
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{supabase_url}/rest/v1/profiles?select=role&id=eq.{user_id}",
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and data[0].get("role") == "admin":
+                    return True
+            # Also check user_roles table as fallback
+            resp2 = await client.get(
+                f"{supabase_url}/rest/v1/user_roles?select=role&user_id=eq.{user_id}&role=eq.admin",
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+            )
+            if resp2.status_code == 200 and resp2.json():
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def _check_user_chapter_access(user_id: str, chapter_id: str) -> bool:
+    """Verify user has chapter_access entry not blocked."""
+    if not chapter_id:
+        return True
+    try:
+        # If chapter does not require enrollment, allow
+        chap_info = chapter_lookup.get(chapter_id)
+        if chap_info and not chap_info.get("requires_enrollment"):
+            return True
+        # If no chapter info (e.g., cache empty), be permissive but log
+        if not chap_info:
+            logger.info(f"[AuthZ] chapter_lookup miss for {chapter_id}, allowing pending cache refresh")
+            return True
+
+        supabase_url = secrets_manager.get_secret("supabase_url")
+        supabase_key = secrets_manager.get_secret("supabase_service_key")
+        if not supabase_url or not supabase_key:
+            return False
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{supabase_url}/rest/v1/chapter_access?user_id=eq.{user_id}&chapter_id=eq.{chapter_id}&is_blocked=eq.false&select=id",
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    return True
+            # Also allow if admin
+            if await _is_user_admin(user_id):
+                return True
+    except Exception as e:
+        logger.error(f"[AuthZ] check_user_chapter_access error: {e}")
+    return False
 
 
 @app.api_route("/api/stream/{video_id}", methods=["GET", "HEAD"])
@@ -1232,11 +1375,22 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
         raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
 
     user_id = user.get("sub") or user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     if concurrent_user_streams[user_id] >= 3:
         raise HTTPException(status_code=429, detail="Maximum 3 concurrent streams allowed")
 
+    # UUID v4 pattern for video_id but allow legacy ids: alphanumeric + _-
     if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', video_id):
         raise HTTPException(status_code=400, detail="Invalid video ID format")
+    # Additional UUID validation if looks like UUID (36 chars with hyphens)
+    if len(video_id) == 36:
+        try:
+            import uuid as _uuid
+            _uuid.UUID(video_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid video ID format")
 
     await check_rate_limit(request, limit=120, window=60, prefix="stream")
     asyncio.create_task(internal_log_activity(user_id, "stream_start", {"video_id": video_id}, request))
@@ -1248,6 +1402,13 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
                 raise HTTPException(status_code=404, detail="Video not found in active catalog.")
 
         video = video_map[video_id]
+        # --- AUTHORIZATION CHECK: enrollment required? ---
+        chapter_id = video.get("chapter_id")
+        if chapter_id:
+            has_access = await _check_user_chapter_access(user_id, chapter_id)
+            if not has_access:
+                raise HTTPException(status_code=403, detail="Enrollment required for this chapter. Please redeem an enrollment code.")
+
         source_type = video.get("source_type", "telegram")
         channel_id_str = video.get("channel_id", "")
         message_id_str = video.get("message_id", 0)
@@ -1318,7 +1479,7 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
                     "Content-Length": str(file_size),
                     "Accept-Ranges": "bytes",
                     "Content-Type": mime_type,
-                    "Cache-Control": "no-cache",
+                    "Cache-Control": "private, no-store",
                 }
             )
 
@@ -1332,12 +1493,16 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
         length = end - start + 1
 
         async def _tracked_stream():
+            incremented = False
             try:
                 concurrent_user_streams[user_id] += 1
+                incremented = True
                 async for chunk in _stream_telegram(channel_id, message_id, start, end, file_size):
                     yield chunk
             finally:
-                concurrent_user_streams[user_id] -= 1
+                if incremented:
+                    # Defensive: ensure doesn't go negative
+                    concurrent_user_streams[user_id] = max(0, concurrent_user_streams[user_id] - 1)
 
         return StreamingResponse(
             _tracked_stream(),
@@ -1348,7 +1513,7 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Content-Length": str(length),
                 "Content-Type": mime_type,
-                "Cache-Control": "public, max-age=31536000",
+                "Cache-Control": "private, no-store",
                 "X-Content-Type-Options": "nosniff",
             }
         )
@@ -1357,6 +1522,7 @@ async def stream_video(video_id: str, request: Request, token: str = None, autho
         raise
     except Exception as e:
         logger.info(f"[NexusEdu] Stream endpoint error: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
@@ -1390,7 +1556,27 @@ async def internal_log_activity(user_id: str, action: str, details: dict, reques
 
 class ActivityLogReq(BaseModel):
     action: constr(min_length=1, max_length=50)
-    details: dict = {}
+    details: dict = Field(default_factory=dict)
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate_details_size
+
+    @staticmethod
+    def validate_details_size(values):
+        return values
+
+    def model_post_init(self, __context):
+        # Limit details JSON size to 2KB to prevent bloat
+        try:
+            import json as _json
+            size = len(_json.dumps(self.details))
+            if size > 2048:
+                raise ValueError("details too large (max 2KB)")
+        except Exception as e:
+            if "too large" in str(e):
+                raise
+        return super().model_post_init(__context) if hasattr(super(), 'model_post_init') else None
 
 @app.post("/api/activity")
 async def log_activity(req: ActivityLogReq, request: Request, authorization: str = Header(None)):
@@ -1400,6 +1586,16 @@ async def log_activity(req: ActivityLogReq, request: Request, authorization: str
     
     user_id = user.get("sub") or user.get("id")
     await check_rate_limit(request, limit=100, window=60, prefix=f"activity_{user_id}")
+
+    # Extra size check (defense in depth)
+    try:
+        import json as _json
+        if len(_json.dumps(req.details)) > 2048:
+            raise HTTPException(status_code=400, detail="details payload too large")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     
     asyncio.create_task(internal_log_activity(user_id, req.action, req.details, request))
     return {"status": "ok"}
@@ -1412,11 +1608,11 @@ class DeleteUserReq(BaseModel):
 class GenerateChapterCodeReq(BaseModel):
     chapter_id: Optional[constr(min_length=36, max_length=36)] = None
     cycle_id: Optional[constr(min_length=36, max_length=36)] = None
-    type: Optional[str] = "chapter"  # "chapter" or "cycle"
-    notes: Optional[str] = ""
-    label: Optional[str] = ""
-    max_uses: int = 1
-    count: int = 1
+    type: Optional[str] = Field(default="chapter", pattern="^(chapter|cycle)$")
+    notes: Optional[str] = Field(default="", max_length=500)
+    label: Optional[str] = Field(default="", max_length=200)
+    max_uses: int = Field(default=1, ge=1, le=100)
+    count: int = Field(default=1, ge=1, le=100)
 
 
 @app.post("/api/admin/verify")
@@ -1565,12 +1761,12 @@ async def admin_generate_chapter_code(req: GenerateChapterCodeReq, request: Requ
 
 
 class ProgressUpdateItem(BaseModel):
-    video_id: str
-    progress: float
-    duration: float
+    video_id: str = Field(..., min_length=1, max_length=64, pattern=r'^[a-zA-Z0-9_-]+$')
+    progress: float = Field(..., ge=0, le=86400)  # max 24h
+    duration: float = Field(..., ge=0, le=86400)
 
 class ProgressBatchReq(BaseModel):
-    updates: list[ProgressUpdateItem]
+    updates: list[ProgressUpdateItem] = Field(..., min_length=1, max_length=100)
 
 @app.post("/api/progress/batch")
 async def batch_progress(req: ProgressBatchReq, request: Request, authorization: str = Header(None)):
@@ -1593,18 +1789,35 @@ async def batch_progress(req: ProgressBatchReq, request: Request, authorization:
     now_str = datetime.utcnow().isoformat() + "Z"
     
     for up in req.updates:
-        completed = up.duration > 0 and (up.progress / up.duration) >= 0.95
-        progress_percent = round((up.progress / up.duration) * 100) if up.duration > 0 else 0
+        # Additional validation: progress should not wildly exceed duration
+        if up.duration > 0 and up.progress > up.duration * 1.5:
+            # Cap at duration
+            up_progress = min(up.progress, up.duration)
+        else:
+            up_progress = up.progress
+
+        # Validate video_id exists in catalog (if catalog loaded)
+        if video_map and up.video_id not in video_map:
+            # Skip unknown videos but log
+            logger.warning(f"[Progress] Unknown video_id {up.video_id} from user {user_id}, skipping")
+            continue
+
+        completed = up.duration > 0 and (up_progress / up.duration) >= 0.95
+        progress_percent = round((up_progress / up.duration) * 100) if up.duration > 0 else 0
+        progress_percent = min(100, max(0, progress_percent))
         
         upsert_data.append({
             "user_id": user_id,
             "video_id": up.video_id,
-            "progress_seconds": math.floor(up.progress),
+            "progress_seconds": math.floor(up_progress),
             "progress_percent": progress_percent,
             "completed": completed,
             "watched_at": now_str,
             "updated_at": now_str
         })
+
+    if not upsert_data:
+        return {"status": "ok", "message": "no valid updates"}
         
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1633,6 +1846,12 @@ async def _ensure_admin(request: Request) -> str:
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    # Set user in request.state for audit middleware
+    try:
+        request.state.user = user
+    except Exception:
+        pass
+
     is_admin = False
     try:
         supabase_url = secrets_manager.get_secret("supabase_url")
@@ -1645,6 +1864,14 @@ async def _ensure_admin(request: Request) -> str:
             if resp.status_code == 200:
                 data = resp.json()
                 is_admin = (data and len(data) > 0 and data[0].get("role") == "admin")
+            # Also check user_roles table
+            if not is_admin:
+                resp2 = await client.get(
+                    f"{supabase_url}/rest/v1/user_roles?select=role&user_id=eq.{user['sub']}&role=eq.admin",
+                    headers={"apikey": secrets_manager.get_secret('supabase_service_key'), "Authorization": f"Bearer {secrets_manager.get_secret('supabase_service_key')}"}
+                )
+                if resp2.status_code == 200 and resp2.json():
+                    is_admin = True
     except Exception:
         pass
 
@@ -1838,11 +2065,27 @@ async def admin_get_user_sessions(user_id: str, request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 class AdminContentMutateReq(BaseModel):
-    data: dict
+    data: dict = Field(..., description="Validated payload for admin content mutation")
 
-def _ensure_admin_signature(request: Request, payload: str):
+    def model_post_init(self, __context):
+        # Whitelist check: prevent dangerous keys like id overwrite in POST? Allow but restrict
+        # For safety, reject keys containing $ or __ or starting with _
+        for k in self.data.keys():
+            if k.startswith("_") or "$" in k or "__" in k:
+                raise ValueError(f"Invalid field name: {k}")
+        return super().model_post_init(__context) if hasattr(super(), 'model_post_init') else None
+
+def _ensure_admin_signature(request: Request, payload: str, required: bool = False):
+    """Verify HMAC signature if present, or require if required=True."""
     x_admin_signature = request.headers.get("X-Admin-Signature")
     x_admin_timestamp = request.headers.get("X-Admin-Timestamp")
+    # If not required and no signature, allow (fallback to JWT admin check already done)
+    if not required:
+        if not x_admin_signature or not x_admin_timestamp:
+            # Optional second factor not provided - allow but log
+            logger.info("[Admin] No HMAC signature provided, relying on JWT admin role only")
+            return
+    # Required path
     if not x_admin_signature or not x_admin_timestamp:
         raise HTTPException(status_code=403, detail="Missing secure admin signature")
     if not verify_admin_signature(x_admin_signature, payload, x_admin_timestamp):
@@ -1868,27 +2111,41 @@ async def _supabase_admin_rpc(method: str, endpoint: str, json_data: dict = None
             raise HTTPException(resp.status_code, resp.text)
         return resp.json() if resp.text else None
 
+def _filter_allowed(data: dict, allowed: set) -> dict:
+    return {k: v for k, v in data.items() if k in allowed}
+
+ALLOWED_SUBJECT_FIELDS = {"name", "name_bn", "slug", "description", "description_bn", "icon", "color", "thumbnail_color", "display_order", "is_active"}
+ALLOWED_CYCLE_FIELDS = {"name", "name_bn", "description", "description_bn", "subject_id", "display_order", "is_active", "telegram_channel_id"}
+ALLOWED_CHAPTER_FIELDS = {"name", "name_bn", "description", "description_bn", "cycle_id", "display_order", "is_active", "requires_enrollment"}
+ALLOWED_VIDEO_FIELDS = {"title", "title_bn", "description", "description_bn", "chapter_id", "source_type", "source_url", "telegram_channel_id", "telegram_message_id", "youtube_video_id", "drive_file_id", "thumbnail_url", "duration", "size_mb", "file_size_bytes", "mime_type", "display_order", "is_active"}
+
 # Subject Endpoints
 @app.post("/api/admin/subjects")
 async def admin_create_subject(req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("POST", "subjects", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_SUBJECT_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("POST", "subjects", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.put("/api/admin/subjects/{subject_id}")
 async def admin_update_subject(subject_id: str, req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("PATCH", f"subjects?id=eq.{subject_id}", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_SUBJECT_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("PATCH", f"subjects?id=eq.{subject_id}", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.delete("/api/admin/subjects/{subject_id}")
 async def admin_delete_subject(subject_id: str, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, "")
+    _ensure_admin_signature(request, "", required=False)
     resp = await _supabase_admin_rpc("DELETE", f"subjects?id=eq.{subject_id}")
     asyncio.create_task(refresh_catalog())
     return {"status": "ok"}
@@ -1897,23 +2154,29 @@ async def admin_delete_subject(subject_id: str, request: Request):
 @app.post("/api/admin/cycles")
 async def admin_create_cycle(req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("POST", "cycles", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_CYCLE_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("POST", "cycles", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.put("/api/admin/cycles/{cycle_id}")
 async def admin_update_cycle(cycle_id: str, req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("PATCH", f"cycles?id=eq.{cycle_id}", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_CYCLE_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("PATCH", f"cycles?id=eq.{cycle_id}", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.delete("/api/admin/cycles/{cycle_id}")
 async def admin_delete_cycle(cycle_id: str, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, "")
+    _ensure_admin_signature(request, "", required=False)
     resp = await _supabase_admin_rpc("DELETE", f"cycles?id=eq.{cycle_id}")
     asyncio.create_task(refresh_catalog())
     return {"status": "ok"}
@@ -1922,23 +2185,29 @@ async def admin_delete_cycle(cycle_id: str, request: Request):
 @app.post("/api/admin/chapters")
 async def admin_create_chapter(req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("POST", "chapters", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_CHAPTER_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("POST", "chapters", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.put("/api/admin/chapters/{chapter_id}")
 async def admin_update_chapter(chapter_id: str, req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("PATCH", f"chapters?id=eq.{chapter_id}", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_CHAPTER_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("PATCH", f"chapters?id=eq.{chapter_id}", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.delete("/api/admin/chapters/{chapter_id}")
 async def admin_delete_chapter(chapter_id: str, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, "")
+    _ensure_admin_signature(request, "", required=False)
     resp = await _supabase_admin_rpc("DELETE", f"chapters?id=eq.{chapter_id}")
     asyncio.create_task(refresh_catalog())
     return {"status": "ok"}
@@ -1947,23 +2216,29 @@ async def admin_delete_chapter(chapter_id: str, request: Request):
 @app.post("/api/admin/videos")
 async def admin_create_video(req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("POST", "videos", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_VIDEO_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("POST", "videos", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.put("/api/admin/videos/{video_id}")
 async def admin_update_video(video_id: str, req: AdminContentMutateReq, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, req.model_dump_json())
-    resp = await _supabase_admin_rpc("PATCH", f"videos?id=eq.{video_id}", req.data)
+    _ensure_admin_signature(request, req.model_dump_json(), required=False)
+    filtered = _filter_allowed(req.data, ALLOWED_VIDEO_FIELDS)
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    resp = await _supabase_admin_rpc("PATCH", f"videos?id=eq.{video_id}", filtered)
     asyncio.create_task(refresh_catalog())
     return resp
 
 @app.delete("/api/admin/videos/{video_id}")
 async def admin_delete_video(video_id: str, request: Request):
     await _ensure_admin(request)
-    _ensure_admin_signature(request, "")
+    _ensure_admin_signature(request, "", required=False)
     resp = await _supabase_admin_rpc("DELETE", f"videos?id=eq.{video_id}")
     asyncio.create_task(refresh_catalog())
     return {"status": "ok"}
@@ -2039,11 +2314,27 @@ async def get_dashboard_metrics(request: Request):
     # Active streams from global concurrent_user_streams
     active_streams = sum(concurrent_user_streams.values())
     
-    # Estimate live users (simulate using active_streams users)
+    # Real live users = number of users with active streams + recent activity (last 5 min)
     live_users_count = len([u for u, c in concurrent_user_streams.items() if c > 0])
-    # Add a baseline of normal users checking files without video stream
-    import random
-    live_users = live_users_count + random.randint(3, 10)
+    # Baseline should be calculated from activity_logs, not random
+    live_users = live_users_count  # Will be enriched from DB if available
+    try:
+        # Try to get active users in last 5 minutes from activity_logs for more accurate live count
+        supabase_url_tmp = secrets_manager.get_secret("supabase_url")
+        supabase_key_tmp = secrets_manager.get_secret("supabase_service_key")
+        if supabase_url_tmp and supabase_key_tmp:
+            async with httpx.AsyncClient(timeout=3.0) as _client:
+                from datetime import datetime, timedelta, timezone
+                five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+                resp_active = await _client.get(
+                    f"{supabase_url_tmp}/rest/v1/activity_logs?select=user_id&created_at=gte.{five_min_ago}",
+                    headers={"apikey": supabase_key_tmp, "Authorization": f"Bearer {supabase_key_tmp}"}
+                )
+                if resp_active.status_code == 200:
+                    active_users_set = set([r.get("user_id") for r in resp_active.json() if r.get("user_id")])
+                    live_users = max(live_users_count, len(active_users_set))
+    except Exception:
+        pass
     
     # Server resources
     process = psutil.Process()

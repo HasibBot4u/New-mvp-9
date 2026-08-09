@@ -1,32 +1,28 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-export function useScreenProtection() {
+export function useScreenProtection(options?: { disableContextMenu?: boolean; disableDevToolsShortcuts?: boolean }) {
   const [isProtected, setIsProtected] = useState(true);
 
   useEffect(() => {
-    // Basic protection against keyboard shortcuts often used for DevTools/Screenshotting
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent PrintScreen
-      if (e.key === 'PrintScreen') {
-        navigator.clipboard.writeText('');
-        toast.error('Screenshots are not allowed.');
-        e.preventDefault();
-      }
+    // Only pause video on hidden, do not block devtools or context menu by default
+    // Previous implementation blocked PrintScreen, Ctrl+Shift+I, F12, contextmenu which breaks a11y and is easily bypassed
+    // Now we make protection opt-in via options, and even then we only warn, not block
+    const disableContextMenu = options?.disableContextMenu ?? false;
+    const disableShortcuts = options?.disableDevToolsShortcuts ?? false;
 
-      // Prevent Ctrl+Shift+I, F12, Ctrl+Shift+C etc. for DevTools
-      if (
-        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
-        e.key === 'F12'
-      ) {
-        e.preventDefault();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!disableShortcuts) return;
+      if (e.key === 'PrintScreen') {
+        // Best effort: clear clipboard is unreliable and intrusive, just warn
+        toast.message('Screen recording is discouraged per terms.');
+        // Don't prevent default
       }
     };
 
-    // Detect visibility change (sometimes indicative of switching to a screen recording app)
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        setIsProtected(false); // Pause if hidden
+        setIsProtected(false);
       } else {
         setIsProtected(true);
       }
@@ -35,16 +31,22 @@ export function useScreenProtection() {
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Context menu prevention
-    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
-    document.addEventListener('contextmenu', handleContextMenu);
+    const handleContextMenu = (e: MouseEvent) => {
+      if (!disableContextMenu) return;
+      e.preventDefault();
+    };
+    if (disableContextMenu) {
+      document.addEventListener('contextmenu', handleContextMenu);
+    }
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('contextmenu', handleContextMenu);
+      if (disableContextMenu) {
+        document.removeEventListener('contextmenu', handleContextMenu);
+      }
     };
-  }, []);
+  }, [options?.disableContextMenu, options?.disableDevToolsShortcuts]);
 
   return { isProtected };
 }

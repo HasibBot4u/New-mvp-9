@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     supabase_service_key: SecretStr
     
     # JWT and Rate Limiting
-    jwt_secret: SecretStr
+    jwt_secret: Optional[SecretStr] = None
     rate_limit_per_minute: int = 60
     admin_token: Optional[SecretStr] = None
     
@@ -29,7 +29,13 @@ class Settings(BaseSettings):
     telegram_api_id: Optional[int] = None
     telegram_api_hash: Optional[SecretStr] = None
     pyrogram_session_string: Optional[SecretStr] = None
+    pyrogram_session_string_2: Optional[SecretStr] = None
     telegram_bot_token: Optional[SecretStr] = None
+    telegram_webhook_secret: Optional[SecretStr] = None
+    thumbnail_channel_id: Optional[str] = None
+
+    # External workers
+    cloudflare_worker_url: Optional[str] = None
 
     class Config:
         env_file = ".env"

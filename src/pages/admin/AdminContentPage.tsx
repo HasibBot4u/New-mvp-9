@@ -36,32 +36,24 @@ export default function AdminContentPage() {
     if (!token) throw new Error("Not authenticated");
 
     const headers: Record<string, string> = {
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json"
     };
 
-    let payloadStr = "";
-    if (body) {
-      payloadStr = JSON.stringify(body); // Changed to body, not { data: body } unless required
-      headers["Content-Type"] = "application/json";
-    }
-
-    const secret = import.meta.env.VITE_ADMIN_TOKEN || "fake_admin_token_abcdef1234567890";
-    const timestamp = (Date.now() / 1000).toString();
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const signatureBuffer = await crypto.subtle.sign("HMAC", key, enc.encode(`${payloadStr}:${timestamp}`));
-    const signature = Array.from(new Uint8Array(signatureBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-    headers["X-Admin-Signature"] = signature;
-    headers["X-Admin-Timestamp"] = timestamp;
-
+    // SECURITY FIX: Do NOT use VITE_ADMIN_TOKEN in frontend - it would expose secret.
+    // Rely on JWT admin role verification server-side. HMAC optional now.
     const API_URL = API_BASE_URL;
     
     try {
-      const res = await fetch(`${API_URL}/api/admin/${endpoint}`, { method, headers, ...(body ? { body: payloadStr } : {}) });
+      const res = await fetch(`${API_URL}/api/admin/${endpoint}`, { 
+        method, 
+        headers, 
+        ...(body ? { body: JSON.stringify(body) } : {}) 
+      });
       if (res.ok) {
         return await res.json();
       }
+      console.warn(`API ${endpoint} returned ${res.status}, trying Supabase fallback`);
     } catch (e) {
       console.warn("API call failed, falling back to Supabase directly", e);
     }
@@ -133,7 +125,10 @@ export default function AdminContentPage() {
   };
 
   const handleGenerateCode = async (chapterId: string) => {
-    const code = "NEXUS-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+    // Use crypto secure generation instead of Math.random
+    const array = new Uint8Array(4);
+    crypto.getRandomValues(array);
+    const code = "NEXUS-" + Array.from(array).map(b=>b.toString(36).toUpperCase()).join("").substring(0,6);
     try {
       const { session } = (await supabase.auth.getSession()).data;
       const { error } = await supabase.from('enrollment_codes').insert({

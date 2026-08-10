@@ -7,11 +7,31 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useSystemSettings } from "@/contexts/SystemSettingsContext";
 
 export default function SignupPage() {
   const { signUp } = useAuth();
   const nav = useNavigate();
   const { toast } = useToast();
+  const { settings } = useSystemSettings();
+
+  // Stage 3 fix: the allow_registrations system setting was loaded but
+  // never enforced anywhere, so the admin "close registrations" toggle
+  // had zero effect. Client-side gate (server-side enforcement would
+  // require a Supabase Auth hook/DB trigger — documented residual risk).
+  if (!settings.allow_registrations) {
+    return (
+      <AuthShell
+        title="Sign-ups paused"
+        subtitle="Registration is temporarily closed. Please try again later."
+        footer={<>Already have an account? <Link to="/login" className="text-primary hover:underline font-medium">Sign in</Link></>}
+      >
+        <p className="text-sm text-foreground-muted text-center bangla">
+          নতুন নিবন্ধন সাময়িকভাবে বন্ধ রয়েছে। অনুগ্রহ করে পরে আবার চেষ্টা করুন।
+        </p>
+      </AuthShell>
+    );
+  }
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

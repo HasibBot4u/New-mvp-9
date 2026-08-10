@@ -18,8 +18,8 @@ dev:
 	@wait
 
 test:
-	npm run test:ci || echo "Frontend tests missed"
-	pytest
+	npm run test:ci
+	pytest backend/tests -v
 
 build:
 	npm run build

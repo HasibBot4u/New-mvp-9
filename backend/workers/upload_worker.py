@@ -90,11 +90,11 @@ class UploadWorker:
                 file_name = task['file_name'] or f"video_{queue_id}.mp4"
                 file_size = task.get('file_size_bytes', 1000000000)
                 
-                await self.process_task(queue_id, file_id, file_name, file_size)
+                await self.process_task(queue_id, file_id, file_name, file_size, task)
         except Exception as e:
             logger.error(f"Error polling queue: {e}")
 
-    async def process_task(self, queue_id: str, file_id: str, file_name: str, file_size: int = 1000000000):
+    async def process_task(self, queue_id: str, file_id: str, file_name: str, file_size: int = 1000000000, task: dict = None):
         download_path = ""
         thumbnails = []
         variants = {}
@@ -160,18 +160,28 @@ class UploadWorker:
             if os.path.exists(download_path):
                 os.remove(download_path)
             
-            # Update the video directly to store the thumbnail_telegram_message_id (Assuming queue_id or similar is used to link to main DB, here update_status will be enough if main video table is updated elsewhere, but we'll try to update 'videos' table directly)
+            # Stage 2 fix: the old filter (file_id=eq.{file_id}) matched
+            # nothing — the videos table had no populated file_id column —
+            # so thumbnail message ids were never linked. Match on the
+            # Telegram coordinates carried by the queue row instead, and
+            # store file_id for future direct lookups.
             if thumbnail_msg_id:
+                task_channel = task.get("telegram_channel_id") if isinstance(task, dict) else None
+                task_message = task.get("telegram_message_id") if isinstance(task, dict) else None
                 async with httpx.AsyncClient() as client:
-                    await client.patch(
-                        f"{self.supabase_url}/rest/v1/videos?file_id=eq.{file_id}",
-                        headers={
-                            "apikey": self.supabase_key,
-                            "Authorization": f"Bearer {self.supabase_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json={"thumbnail_telegram_message_id": thumbnail_msg_id}
-                    )
+                    if task_channel and task_message:
+                        await client.patch(
+                            f"{self.supabase_url}/rest/v1/videos"
+                            f"?telegram_channel_id=eq.{task_channel}&telegram_message_id=eq.{task_message}",
+                            headers={
+                                "apikey": self.supabase_key,
+                                "Authorization": f"Bearer {self.supabase_key}",
+                                "Content-Type": "application/json"
+                            },
+                            json={"thumbnail_telegram_message_id": thumbnail_msg_id, "file_id": file_id}
+                        )
+                    else:
+                        logger.warning(f"[UploadWorker] No telegram coordinates on queue row {queue_id}; thumbnail not linked")
 
             await self.update_status(queue_id, "completed")
             

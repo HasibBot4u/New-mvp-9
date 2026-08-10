@@ -1,18 +1,24 @@
+"""Stream endpoint auth tests (Stage 2: routes corrected from /api/v1/stream)."""
 import pytest
+
 
 @pytest.mark.asyncio
 async def test_stream_video_auth_required(async_client):
-    response = await async_client.get("/api/v1/stream/vid_123")
-    assert response.status_code == 404 # Assuming routing is setup or 401 if secured
+    """No credentials -> 401."""
+    response = await async_client.get("/api/stream/vid_123")
+    assert response.status_code == 401
+
 
 @pytest.mark.asyncio
-async def test_stream_video_range_request(async_client, mocker):
-    mocker.patch("backend.dependencies.verify_token", return_value={"sub": "user_1"})
-    headers = {"Range": "bytes=0-1024", "Authorization": "Bearer test_token"}
-    response = await async_client.get("/api/v1/stream/vid_123", headers=headers)
-    assert response.status_code in [200, 206, 404]
+async def test_stream_video_invalid_ticket_rejected(async_client):
+    """A forged/expired ticket must never authenticate."""
+    response = await async_client.get(
+        "/api/stream/vid_123", params={"ticket": "user:9999999999:deadbeef"}
+    )
+    assert response.status_code == 401
+
 
 @pytest.mark.asyncio
-async def test_video_not_found(async_client):
-    response = await async_client.get("/api/v1/stream/invalid_vid")
-    assert response.status_code == 404
+async def test_stream_ticket_endpoint_requires_auth(async_client):
+    response = await async_client.get("/api/stream-ticket/vid_123")
+    assert response.status_code == 401

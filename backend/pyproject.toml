@@ -24,3 +24,11 @@ aiofiles = "23.2.1"
 pytest = "8.1.1"
 pytest-asyncio = "0.23.6"
 bandit = "1.7.8"
+
+[tool.pytest.ini_options]
+# Stage 4 CI fix: CI runs plain `pytest backend/tests` from the repo root.
+# The bare pytest entry point does not add the cwd to sys.path (unlike
+# `python -m pytest`), so `import backend.main` failed (exit code 4).
+# rootdir resolves to backend/, therefore ".." is the repository root.
+pythonpath = [".."]
+asyncio_mode = "strict"

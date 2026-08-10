@@ -14,11 +14,15 @@ export default function SignupPage() {
   const nav = useNavigate();
   const { toast } = useToast();
   const { settings } = useSystemSettings();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  // Stage 3 fix: the allow_registrations system setting was loaded but
-  // never enforced anywhere, so the admin "close registrations" toggle
-  // had zero effect. Client-side gate (server-side enforcement would
-  // require a Supabase Auth hook/DB trigger — documented residual risk).
+  // Stage 3/4: the allow_registrations gate. NOTE: kept below ALL hooks —
+  // an early return before useState calls violated the rules of hooks
+  // (caught by CI lint). Client-side gate only; server-side enforcement
+  // would need a Supabase Auth hook/DB trigger (documented residual).
   if (!settings.allow_registrations) {
     return (
       <AuthShell
@@ -32,10 +36,6 @@ export default function SignupPage() {
       </AuthShell>
     );
   }
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

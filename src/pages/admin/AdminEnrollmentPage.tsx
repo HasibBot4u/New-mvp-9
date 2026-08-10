@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Copy, Ticket, Download, Trash, Search, Loader2, ChevronDown } from "lucide-react";
+import { Copy, Ticket, Download, Trash, Search, Loader2, ChevronDown, RotateCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -60,6 +60,49 @@ export default function AdminEnrollmentPage() {
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // ── Stage 2: pending manual-payment approval queue ─────────────────────
+  // Students submit bKash/Nagad transaction IDs via /enrollment, but this
+  // data was previously never reviewed anywhere. This closes that loop.
+  const [pending, setPending] = useState<any[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+
+  const fetchPending = useCallback(async () => {
+    if (!session?.access_token) return;
+    setPendingLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE}/api/admin/enrollments/pending?status_filter=pending&limit=50`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setPending(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error("Failed to load pending enrollments", e);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, [session?.access_token]);
+
+  useEffect(() => { fetchPending(); }, [fetchPending]);
+
+  const resolvePending = async (id: string, action: "approve" | "reject") => {
+    try {
+      const resp = await fetch(`${API_BASE}/api/admin/enrollments/${id}/${action}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || `Request failed (${resp.status})`);
+      }
+      toast.success(action === "approve" ? "Enrollment approved — chapter access granted" : "Enrollment rejected");
+      fetchPending();
+    } catch (err: any) {
+      toast.error(err.message || "Action failed");
+    }
+  };
+
   // Fetch initial data
   const fetchCodes = useCallback(async () => {
     setLoading(true);
@@ -70,7 +113,14 @@ export default function AdminEnrollmentPage() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setCodes(data as EnrollmentCode[] || []);
+      // Stage 2 fix: the database column is `uses_count`; the UI state
+      // type uses `uses`. Previously c.uses was always undefined, so the
+      // "full" status and usage bars never worked.
+      const normalized = (data || []).map((c: any) => ({
+        ...c,
+        uses: c.uses ?? c.uses_count ?? 0,
+      }));
+      setCodes(normalized as EnrollmentCode[]);
       
       // Clear selections on reload
       setSelectedIds(new Set());
@@ -343,6 +393,50 @@ export default function AdminEnrollmentPage() {
           </Button>
         </div>
       </div>
+
+      {/* Stage 2: manual payment approval queue */}
+      <Card>
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base">Pending Payment Approvals</CardTitle>
+            <p className="text-xs text-foreground-muted mt-1">
+              Manual bKash/Nagad submissions from the student enrollment form. Approving grants chapter access immediately.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={fetchPending} disabled={pendingLoading}>
+            <RotateCw className={`w-4 h-4 mr-2 ${pendingLoading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {pending.length === 0 ? (
+            <p className="text-sm text-foreground-muted py-4 text-center">
+              {pendingLoading ? "Loading…" : "No pending enrollment requests"}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {pending.map(p => (
+                <div key={p.id} className="flex flex-col md:flex-row md:items-center gap-3 p-3 rounded-lg bg-surface/50 border border-white/5">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {p.profiles?.display_name || p.profiles?.email || "Unknown user"}
+                    </div>
+                    <div className="text-xs text-foreground-muted truncate">
+                      {p.chapters?.name_bn || p.chapters?.name || "Unknown chapter"} · ৳{p.amount} · {p.payment_method} · TrxID: <span className="font-mono">{p.transaction_id}</span>
+                    </div>
+                    <div className="text-[11px] text-foreground-muted">
+                      {p.created_at ? new Date(p.created_at).toLocaleString() : ""}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => resolvePending(p.id, "approve")}>Approve</Button>
+                    <Button size="sm" variant="destructive" onClick={() => resolvePending(p.id, "reject")}>Reject</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {isSelectorOpen && (
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">

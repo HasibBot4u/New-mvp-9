@@ -1,18 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 echo "🚀 Deploying NexusEdu..."
 
-# Production build frontend
+# Stage 2 fix: the Dockerfile lives at the REPO ROOT, not inside backend/.
+# (RENDER_DEPLOYMENT_INSTRUCTIONS.md previously pointed at a nonexistent
+# backend/Dockerfile.)
+
 echo "Building frontend..."
 npm run build
 
-# Dockerize backend
 echo "Building backend Docker image..."
-cd backend
 docker build -t nexusedu-api:latest .
-cd ..
 
-# Deployment would typically utilize Terraform or CI/CD
-echo "Deployment scripts are executed via CI/CD (.github/workflows/)."
-echo "Manual deployment logic can be integrated here."
+echo "Deployment images built. Actual rollout is performed by CI/CD"
+echo "(.github/workflows/ci.yml -> Netlify, backend-deploy.yml -> Render)."

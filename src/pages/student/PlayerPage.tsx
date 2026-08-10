@@ -79,6 +79,9 @@ export default function PlayerPage() {
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+  // Stage 2: short-lived HMAC stream ticket so the Supabase JWT is no
+  // longer embedded in the media URL (history/Referer/log leakage).
+  const [streamTicket, setStreamTicket] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
 
   const { video, chapter, nextVideoId, prevVideoId } = useMemo(() => {
@@ -162,6 +165,42 @@ export default function PlayerPage() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Stage 2/3: acquire a scoped stream ticket for telegram sources.
+  // Stage 3 regression fix: deps are [source?.type, video?.id] only.
+  // Depending on the `video` object or `sessionToken` caused the ticket
+  // (and therefore <video src>) to change on every catalog refetch and
+  // every hourly token refresh — reloading the element mid-playback.
+  // The session is read imperatively instead.
+  useEffect(() => {
+    if (source?.type !== "telegram" || !video) {
+      setStreamTicket(null);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const tok = data.session?.access_token;
+        if (!tok || cancelled) return;
+        const r = await fetch(`${API_BASE}/api/stream-ticket/${video.id}`, {
+          headers: { Authorization: `Bearer ${tok}` },
+          signal: controller.signal,
+        });
+        if (!r.ok) throw new Error(`ticket ${r.status}`);
+        const d = await r.json();
+        if (!cancelled && typeof d?.ticket === "string") setStreamTicket(d.ticket);
+      } catch {
+        // videoSrc falls back to the legacy ?token= path when sessionToken exists
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source?.type, video?.id]);
 
   useEffect(() => {
     if (source?.type === "telegram") {
@@ -337,8 +376,14 @@ export default function PlayerPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       try {
-        const checkUrl = `${source.url}?token=${encodeURIComponent(sessionToken)}`;
-        const res = await fetch(checkUrl, { method: "HEAD", signal: controller.signal });
+        const checkUrl = streamTicket
+          ? `${source.url}?ticket=${encodeURIComponent(streamTicket)}`
+          : source.url;
+        const res = await fetch(checkUrl, {
+          method: "HEAD",
+          headers: streamTicket ? {} : { Authorization: `Bearer ${sessionToken}` },
+          signal: controller.signal,
+        });
         clearTimeout(timeoutId);
         if (res.status === 401 || res.status === 403) setErrorType("403");
         else if (res.status === 404) setErrorType("404");
@@ -351,7 +396,7 @@ export default function PlayerPage() {
     } else {
       setErrorType("unknown");
     }
-  }, [source, sessionToken]);
+  }, [source, sessionToken, streamTicket]);
 
   const onNotesChange = (val: string) => {
     setNotes(val);
@@ -408,8 +453,14 @@ export default function PlayerPage() {
     );
   }
 
-  const videoSrc = source.type === "telegram" && sessionToken
-    ? `${source.url}?token=${encodeURIComponent(sessionToken)}`
+  // Stage 2: prefer the scoped stream ticket; the raw-JWT ?token= form is
+  // kept only as a degraded fallback when ticket issuance failed.
+  const videoSrc = source.type === "telegram"
+    ? streamTicket
+      ? `${source.url}?ticket=${encodeURIComponent(streamTicket)}`
+      : sessionToken
+        ? `${source.url}?token=${encodeURIComponent(sessionToken)}`
+        : source.url
     : source.url;
 
   return (
@@ -436,14 +487,17 @@ export default function PlayerPage() {
         >
           {source.type === "telegram" && !errored && (
             <>
+              {/* Stage 3 mobile fix: zones stop above the bottom control
+                  strip (bottom-14) so they no longer swallow taps on the
+                  seekbar ends / fullscreen button on phones. */}
               <div 
-                className="absolute inset-y-0 left-0 w-1/3 z-10" 
+                className="absolute top-0 bottom-14 left-0 w-1/3 z-10" 
                 onClick={handleTap('left')} 
                 onTouchStart={handleTap('left')}
               />
               <div 
-                className="absolute inset-y-0 right-0 w-1/3 z-10" 
-                onClick={handleTap('right')}
+                className="absolute top-0 bottom-14 right-0 w-1/3 z-10" 
+                onClick={handleTap('right')} 
                 onTouchStart={handleTap('right')}
               />
             </>

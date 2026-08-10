@@ -3,6 +3,8 @@
 # Testing
 pytest==8.1.1
 pytest-asyncio==0.23.6
+# Stage 2: test_stream.py uses the `mocker` fixture
+pytest-mock==3.14.0
 
 # Security Scanning
 bandit==1.7.8

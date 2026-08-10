@@ -1,0 +1,5 @@
+# Database (Supabase Postgres)
+Source of truth: `supabase/migrations/` applied in filename order; **20260810000000_stage2_schema_reconciliation.sql is mandatory** — it adds profiles.role, audit_logs.user_id, videos.file_size_bytes/mime_type/telegram_fetched_at/file_id, enrollment_codes.cycle_id (+nullable chapter_id + scope check), announcements runtime columns, pending_enrollments.reviewed_*, and replaces use_chapter_enrollment_code with the cycle-aware atomic version.
+Key tables: profiles, user_roles, subjects/cycles/chapters/videos, enrollment_codes, chapter_access (UNIQUE user+chapter), watch_history (UNIQUE user+video), video_notes, activity_logs, audit_logs, announcements, pending_enrollments, notifications, upload_queue, live_classes, quizzes*, qa*, payments/subscriptions (unused shells).
+RLS: enabled on all; dynamic "Admins have full access" (is_admin() = user_roles); own-row policies by auth.uid().
+Rules: additive-only migrations; never edit applied files; new file per change; validate on a scratch project first. Backup: weekly Actions artifact (`db-backup.yml`, needs SUPABASE_DB_URI secret) + manual pg_dump.

@@ -1,0 +1,3 @@
+# Telegram subsystem
+Original 18 channels + bot were DELETED externally (2026). IDs and video bytes are unrecoverable; see docs/TELEGRAM_RECONSTRUCTION.md for the full mobile-friendly rebuild. Current code expects: TELEGRAM_API_ID/HASH, PYROGRAM_SESSION_STRING(+_2), TELEGRAM_BOT_TOKEN, WEBHOOK_URL (bare host or full path — both handled), TELEGRAM_WEBHOOK_SECRET (warns when unset), ADMIN_CHAT_ID, THUMBNAIL_CHANNEL_ID, 18× *_CHANNEL_ID envs, cycles.telegram_channel_id DB values.
+Watchdog reconnects every 60s; telegram_connected gauge exposes health; FloodWait handled with sleeps; get_message LRU caches message objects 1h (deleted TG messages can serve from cache ≤1h — known).

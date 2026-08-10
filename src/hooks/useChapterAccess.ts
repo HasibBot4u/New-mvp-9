@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceFingerprint } from './useDeviceFingerprint';
+import { normalizeEnrollmentCode } from '@/lib/enrollmentCode';
 
 export function useChapterAccess() {
   const [accessMap, setAccessMap] = useState<Record<string, boolean>>(() => {
@@ -22,12 +23,15 @@ export function useChapterAccess() {
 
       if (error) throw error;
 
+      // Stage 3 fix: the RPC returns a json OBJECT {success, error?};
+      // `!!data` was therefore always true, marking locked chapters as
+      // unlocked in the UI.
       setAccessMap(prev => {
-        const next = { ...prev, [chapterId]: !!data };
+        const next = { ...prev, [chapterId]: !!data?.success };
         try { localStorage.setItem('nexus_access_map', JSON.stringify(next)); } catch (e) { console.debug(e); }
         return next;
       });
-      return !!data;
+      return !!data?.success;
     } catch (error) {
       console.error('Error checking chapter access:', error);
       return false;
@@ -73,14 +77,8 @@ export function useChapterAccess() {
         screen: `${window.screen.width}x${window.screen.height}`
       };
 
-      const normalizeCode = (raw: string): string => {
-        // Remove all non-alphanumeric chars except existing dashes
-        const clean = raw.replace(/[^A-Z0-9a-z]/gi, '').toUpperCase();
-        // Rebuild with dashes every 4 chars (matches generator format: XXXX-XXXX-XXXX-XXXX-XXXX-XXXX)
-        return clean.match(/.{1,4}/g)?.join('-') || clean;
-      };
-      
-      const normalizedCode = normalizeCode(code);
+      // Stage 4: extracted to lib/enrollmentCode.ts with unit tests.
+      const normalizedCode = normalizeEnrollmentCode(code);
 
       const { data, error }: { data: any, error: any } = await (supabase as any).rpc('use_chapter_enrollment_code', {
         p_code: normalizedCode,

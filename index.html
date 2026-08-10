@@ -2,7 +2,9 @@
 <html lang="bn">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' blob:; frame-src https://www.youtube.com https://drive.google.com; connect-src 'self' https://*.supabase.co https://*.onrender.com;" />
+    <!-- Stage 2: workers.dev added to frame-src/connect-src so Cloudflare
+         Drive-proxy streaming (VITE_CLOUDFLARE_WORKER_URL) is not blocked -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' blob:; frame-src https://www.youtube.com https://drive.google.com https://*.workers.dev; connect-src 'self' https://*.supabase.co https://*.onrender.com https://*.workers.dev;" />
     
     <title>NexusEdu — Online HSC Education Platform</title>
     <meta name="description" content="NexusEdu — Bangladesh's premier online HSC education platform. Learn Physics, Chemistry, Math, Biology, Bangla, English & ICT with expert teachers.">

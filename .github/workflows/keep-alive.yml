@@ -15,9 +15,9 @@ jobs:
       - name: Ping fast health endpoint
         run: |
           echo "Pinging /api/ping..."
-          curl -s https://nexusedu-backend-0bjq.onrender.com/api/ping || echo "Ping failed"
-          
+          curl -s "${{ vars.BACKEND_URL || 'https://nexusedu-backend-0bjq.onrender.com' }}/api/ping" || echo "Ping failed"
+
       - name: Warmup API
         run: |
           echo "Warming up /api/warmup..."
-          curl -s https://nexusedu-backend-0bjq.onrender.com/api/warmup || echo "Warmup failed"
+          curl -s "${{ vars.BACKEND_URL || 'https://nexusedu-backend-0bjq.onrender.com' }}/api/warmup" || echo "Warmup failed"

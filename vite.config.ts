@@ -19,19 +19,23 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    css: false
+    css: false,
+    // Stage 2 fix: tests importing src/config/env.ts threw
+    // "VITE_API_BASE_URL required in development mode" because the test
+    // environment never provided the mandatory VITE_* variables.
+    env: {
+      VITE_API_BASE_URL: 'http://localhost:8000',
+      VITE_SUPABASE_URL: 'https://test-project.supabase.co',
+      VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+    },
   },
   build: { 
     outDir: 'dist',
     chunkSizeWarningLimit: 1000,
-    // Note: three.js (~600KB) is heavy and should ideally be lazy-loaded with React.lazy rather than eagerly bundled into manual chunks
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('three') || id.includes('@react-three')) {
-              return 'three';
-            }
             if (id.includes('recharts')) {
               return 'charts';
             }

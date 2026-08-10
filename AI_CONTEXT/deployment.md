@@ -1,0 +1,2 @@
+# Deployment & rollback
+See docs/DEPLOYMENT_PIPELINE.md. Essentials: Render build `pip install -r backend/requirements.txt`, start `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`, root dir = repo root. Netlify build `npm run build` publish `dist`. Migrations BEFORE backend deploy, additive-only. Rollback: Netlify Deploys→publish previous; Render Deploys→restore; DB→restore db-backup artifact. Health: /health; smoke: docs/TESTING_MATRIX.md §D.

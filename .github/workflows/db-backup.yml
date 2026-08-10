@@ -1,0 +1,47 @@
+# Stage 11 — Disaster Recovery: weekly logical backup of the Supabase
+# database, uploaded as a PRIVATE GitHub Actions artifact.
+#
+# Activation (one-time, in GitHub repo settings):
+#   Secrets and variables -> Actions -> New repository secret
+#     SUPABASE_DB_URI = postgres connection string from the Supabase
+#                       dashboard (Settings -> Database -> Connection
+#                       string, use the URI form and substitute your
+#                       database password). NEVER put it in any file.
+#
+# If the secret is absent the job skips cleanly (so this workflow is safe
+# to merge before the secret exists).
+name: DB Backup
+
+on:
+  schedule:
+    - cron: '30 3 * * 1'   # every Monday 03:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database
+        if: ${{ secrets.SUPABASE_DB_URI != '' }}
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y postgresql-client
+          pg_dump "$SUPABASE_DB_URI" --no-owner --no-privileges > nexusedu_backup.sql
+          gzip nexusedu_backup.sql
+          ls -lh nexusedu_backup.sql.gz
+        env:
+          SUPABASE_DB_URI: ${{ secrets.SUPABASE_DB_URI }}
+
+      - name: Skip notice
+        if: ${{ secrets.SUPABASE_DB_URI == '' }}
+        run: echo "SUPABASE_DB_URI secret not set — backup skipped."
+
+      - name: Upload artifact
+        if: ${{ secrets.SUPABASE_DB_URI != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexusedu-db-backup-${{ github.run_number }}
+          path: nexusedu_backup.sql.gz
+          retention-days: 30

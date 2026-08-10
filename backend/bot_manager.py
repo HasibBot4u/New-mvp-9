@@ -158,7 +158,15 @@ class BotManager:
             return False
 
         try:
-            webhook_path = f"{self.config.WEBHOOK_URL}/api/bot_webhook"
+            # Stage 2 fix: WEBHOOK_URL is documented (backend/.env.example)
+            # as ALREADY ending with /api/bot_webhook. Blindly appending
+            # the path produced .../api/bot_webhook/api/bot_webhook and
+            # silently broke the bot. Normalize both operator styles.
+            base = self.config.WEBHOOK_URL.rstrip("/")
+            if base.endswith("/api/bot_webhook"):
+                webhook_path = base
+            else:
+                webhook_path = f"{base}/api/bot_webhook"
 
             # Delete any existing webhook first to avoid conflicts
             await self.application.bot.delete_webhook(drop_pending_updates=True)

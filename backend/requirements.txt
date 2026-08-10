@@ -6,10 +6,21 @@ pyrogram==2.0.106
 tgcrypto==1.2.5
 redis==5.0.3
 pydantic-settings==2.2.1
-python-jose[cryptography]==3.3.0
 bcrypt==4.0.1
 pillow==10.3.0
 aiofiles==23.2.1
 python-dotenv==1.0.1
-supabase==2.4.0
+supabase==2.6.0
 python-socketio[asyncio]==5.11.0
+
+# ── Stage 2 repair (2026-08-10) ────────────────────────────────
+# The packages below were imported by the code but missing from this
+# manifest, which made clean installs crash at import time.
+# bot_manager.py imports telegram.* (webhook bot, v21 API style):
+python-telegram-bot==21.1.1
+# main.py exposes Prometheus metrics at module import level:
+prometheus-client==0.20.0
+# main.py lifespan + dashboard metrics use psutil:
+psutil==5.9.8
+# main.py admin user-stats parses timestamps:
+python-dateutil==2.9.0.post0

@@ -22,25 +22,31 @@ const sendWebVitals = async () => {
     details: { metrics: metricsToSend }
   });
 
-  // Flush using sendBeacon if supported (especially for page hide/unload)
-  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-    const blob = new Blob([payload], { type: 'application/json' });
-    navigator.sendBeacon(`${API_BASE}/api/activity`, blob);
-  } else {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      await fetch(`${API_BASE}/api/activity`, {
-        method: 'POST',
-        headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          'Content-Type': 'application/json'
-        },
-        body: payload
-      }).catch(() => {});
-    } catch {
-      // ignore
-    }
+  // Stage 2 fix: the old path preferred navigator.sendBeacon, which cannot
+  // carry an Authorization header — the backend requires a JWT on
+  // /api/activity, so every beacon was rejected (401) and all web-vitals
+  // telemetry was silently lost. Resolve the session FIRST and use a
+  // keepalive fetch; only fall back to a beacon for logged-in flushes.
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return; // unauthenticated vitals would be rejected anyway
+    await fetch(`${API_BASE}/api/activity`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: payload,
+      keepalive: true
+    }).catch(() => {
+      if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(`${API_BASE}/api/activity`, blob);
+      }
+    });
+  } catch {
+    // ignore
   }
 };
 

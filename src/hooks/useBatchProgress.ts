@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { API_BASE_URL } from '@/config/env';
 
@@ -26,7 +25,9 @@ export function useBatchProgress() {
     pendingUpdates.current.clear();
     setPendingCount(0);
 
-    toast('Saving progress...', { id: 'progress-save', duration: 1000 });
+    // Stage 3 fix: removed the "Saving progress..." toast that fired on
+    // EVERY 10-second auto-flush during playback (constant UI noise on
+    // mobile). Save feedback belongs to errors, not routine syncs.
 
     const sendBatch = async (retry: boolean) => {
       try {

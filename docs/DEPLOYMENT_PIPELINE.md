@@ -15,7 +15,7 @@ push/PR ─► GitHub Actions CI: typecheck → lint → vitest → pytest → b
    ├─ PR        → Netlify **deploy preview** URL (staging) — test on your phone
    └─ merge main → Netlify production deploy + Render deploy hook (backend)
 ```
-Secrets required in GitHub (Settings → Secrets): `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, `RENDER_DEPLOY_HOOK`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL`, `SITE_URL`; Variable: `BACKEND_URL` (keep-alive); optional secret `SUPABASE_DB_URI` (enables weekly db-backup workflow).
+Secrets required in GitHub (Settings → Secrets): `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, `RENDER_DEPLOY_HOOK`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL`, `SITE_URL`; Variable: `BACKEND_URL` (keep-alive); optional secret `SUPABASE_DB_URI` (enables the weekly db-backup workflow — one-time: copy `docs/ops/db-backup.workflow.yml` to `.github/workflows/db-backup.yml` via the GitHub web UI).
 
 ## Release strategy
 Small merges to main; each merge = full rebuild. **Migration releases:** new SQL file in `supabase/migrations/` → apply FIRST in Supabase (SQL editor, phone) → then deploy backend that uses it (additive-only rule: new columns nullable/defaulted ⇒ old code unaffected).

@@ -1,3 +1,8 @@
+# ACTIVATION: this file ships outside .github/workflows/ because the
+# automation token cannot modify workflows. ONE-TIME setup (phone-friendly):
+# GitHub web UI -> Add file -> Create new file -> .github/workflows/db-backup.yml
+# -> paste this content -> commit to main.
+#
 # Stage 11 — Disaster Recovery: weekly logical backup of the Supabase
 # database, uploaded as a PRIVATE GitHub Actions artifact.
 #

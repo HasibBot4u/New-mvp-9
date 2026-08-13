@@ -1,10 +1,10 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Users, BookOpen, Megaphone, Radio, ArrowLeft, LogOut, ScrollText, ServerCog, Ticket, Database, HardDrive, RefreshCcw, Sun, Moon } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/features/auth/AuthContext";
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { supabase } from "@/infrastructure/supabase/client";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { format } from "date-fns";
 
 const items = [

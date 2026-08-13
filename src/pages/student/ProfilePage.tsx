@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/features/auth/AuthContext";
+import { supabase } from "@/infrastructure/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { Loader2, ShieldCheck, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 

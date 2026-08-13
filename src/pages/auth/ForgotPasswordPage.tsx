@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, Mail, ArrowLeft } from "lucide-react";
-import { AuthShell } from "@/components/auth/AuthShell";
-import { useAuth } from "@/contexts/AuthContext";
+import { AuthShell } from "@/features/auth/AuthShell";
+import { useAuth } from "@/features/auth/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 
 export default function ForgotPasswordPage() {
   const { forgotPassword } = useAuth();

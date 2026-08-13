@@ -1,5 +1,5 @@
-import { useBackendHealth } from "@/hooks/useBackendHealth";
-import { cn } from "@/lib/utils";
+import { useBackendHealth } from "@/shared/hooks/useBackendHealth";
+import { cn } from "@/shared/lib/utils";
 
 /**
  * Compact backend status pill — colour + Bangla label per spec.

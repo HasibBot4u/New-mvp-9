@@ -1,72 +1,98 @@
-import os
-import hmac
-import hashlib
-import time
-import secrets
-import bcrypt
+"""
+Security primitives.
 
-from fastapi import HTTPException, status
+- ``secrets_manager``: thin adapter over configuration that returns secret
+  strings by name. It centralises secret access so the rest of the codebase
+  does not read ``os.environ`` for credentials.
+- HMAC admin-request signature verification with replay protection.
+- Secure hex / password helpers.
+- ``APIException`` + handler for consistent domain-error responses.
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import os
+import secrets
+import time
+from typing import Optional
+
+import bcrypt
+from fastapi import HTTPException, Request, status
+from fastapi.responses import JSONResponse
+
+from backend.config import settings
+
 
 class SecretsManager:
-    """Provides a centralized place to hold and rotate secrets if necessary."""
-    def __init__(self):
-        self._secrets = {}
-        self.load_secrets()
+    """Centralised read-only view over configured secrets.
 
-    def load_secrets(self):
-        # Fallback to os.environ but centralize here. A real version would fetch from AWS Secrets Manager / Vault.
-        self._secrets['telegram_api_id'] = int(os.environ.get("TELEGRAM_API_ID", "0"))
-        self._secrets['telegram_api_hash'] = os.environ.get("TELEGRAM_API_HASH", "")
-        self._secrets['telegram_session'] = os.environ.get("PYROGRAM_SESSION_STRING", "")
-        self._secrets['telegram_session_2'] = os.environ.get("PYROGRAM_SESSION_STRING_2", "")
-        self._secrets['supabase_url'] = os.environ.get("SUPABASE_URL", "")
-        self._secrets['supabase_service_key'] = os.environ.get("SUPABASE_SERVICE_KEY", "")
-        self._secrets['supabase_anon_key'] = os.environ.get("SUPABASE_ANON_KEY", "")
-        self._secrets['admin_token'] = os.environ.get("ADMIN_TOKEN", "")
+    Values are sourced from :class:`backend.config.Settings` (validated
+    environment). A future implementation could fetch from a vault without
+    changing callers.
+    """
+
+    def __init__(self):
+        self.refresh()
+
+    def refresh(self) -> None:
+        def _secret(v) -> str:
+            return v.get_secret_value() if v is not None else ""
+
+        self._secrets = {
+            "telegram_api_id": str(settings.telegram_api_id or 0),
+            "telegram_api_hash": _secret(settings.telegram_api_hash),
+            "telegram_session": _secret(settings.pyrogram_session_string),
+            "telegram_session_2": _secret(settings.pyrogram_session_string_2),
+            "supabase_url": str(settings.supabase_url or ""),
+            "supabase_service_key": _secret(settings.supabase_service_key),
+            "supabase_anon_key": _secret(settings.supabase_anon_key),
+            "admin_token": _secret(settings.admin_token),
+        }
 
     def get_secret(self, key: str) -> str:
         return self._secrets.get(key, "")
 
     def require_admin_token(self) -> str:
-        admin_token = self.get_secret('admin_token') or os.environ.get("ADMIN_TOKEN", "")
+        admin_token = self.get_secret("admin_token")
         if not admin_token or len(admin_token) < 32:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="ADMIN_TOKEN environment variable is required and must be at least 32 characters long."
+                detail="ADMIN_TOKEN is required and must be at least 32 characters long.",
             )
         return admin_token
 
-    def rotate_secret(self, key: str, new_value: str):
+    def rotate_secret(self, key: str, new_value: str) -> None:
         self._secrets[key] = new_value
+
 
 secrets_manager = SecretsManager()
 
+# ── Admin HMAC request signatures (replay-protected) ────────────
 _ADMIN_NONCE_CACHE: dict[str, float] = {}
 _NONCE_MAX = 10000
 
-def _cleanup_nonce_cache():
+
+def _cleanup_nonce_cache() -> None:
     now = time.time()
     expired = [k for k, exp in _ADMIN_NONCE_CACHE.items() if exp < now]
     for k in expired:
         _ADMIN_NONCE_CACHE.pop(k, None)
     if len(_ADMIN_NONCE_CACHE) > _NONCE_MAX:
-        # Evict oldest
         oldest = sorted(_ADMIN_NONCE_CACHE.items(), key=lambda x: x[1])[: _NONCE_MAX // 2]
         for k, _ in oldest:
             _ADMIN_NONCE_CACHE.pop(k, None)
 
+
 def verify_admin_signature(signature: str, payload: str, timestamp: str) -> bool:
-    """Verifies HMAC signature for admin requests with replay protection via nonce deduplication."""
+    """Verify an HMAC-SHA256 admin signature with a 60s timestamp window."""
     try:
         ts = float(timestamp)
     except (ValueError, TypeError):
         return False
-
-    now = time.time()
-    if abs(now - ts) > 60:
+    if abs(time.time() - ts) > 60:
         return False
 
-    # Replay protection: signature + timestamp must be unique within window
     nonce_key = f"{signature}:{timestamp}"
     _cleanup_nonce_cache()
     if nonce_key in _ADMIN_NONCE_CACHE:
@@ -80,17 +106,29 @@ def verify_admin_signature(signature: str, payload: str, timestamp: str) -> bool
     expected_mac = hmac.new(secret, message, hashlib.sha256).hexdigest()
     valid = hmac.compare_digest(expected_mac, signature)
     if valid:
-        _ADMIN_NONCE_CACHE[nonce_key] = now + 70  # keep 70s > 60s window
+        _ADMIN_NONCE_CACHE[nonce_key] = time.time() + 70
     return valid
 
+
 def generate_secure_hex(length: int = 6) -> str:
-    """Replaces md5(random()) with a cryptographically secure hex generator."""
+    """Cryptographically secure uppercase hex token (e.g. enrollment codes)."""
     return secrets.token_hex(length).upper()
 
+
 def get_password_hash(password: str) -> str:
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
+# ── Domain exception type ───────────────────────────────────────
+class APIException(Exception):
+    def __init__(self, message: str, status_code: int = 400):
+        self.message = message
+        self.status_code = status_code
+
+
+async def api_exception_handler(request: Request, exc: APIException):
+    return JSONResponse(status_code=exc.status_code, content={"message": exc.message})

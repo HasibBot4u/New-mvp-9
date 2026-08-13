@@ -1,7 +1,7 @@
 import { Link, useParams, Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronRight, ArrowLeft, Layers, Atom, FlaskConical, Sigma } from "lucide-react";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const IconMap: Record<string, React.ElementType> = {

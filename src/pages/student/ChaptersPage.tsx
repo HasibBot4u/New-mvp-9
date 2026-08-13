@@ -2,9 +2,9 @@ import { Link, useParams, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Lock, ChevronRight, BookOpen } from "lucide-react";
-import { useCatalog } from "@/contexts/CatalogContext";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
+import { supabase } from "@/infrastructure/supabase/client";
+import { useAuth } from "@/features/auth/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ChaptersPage() {

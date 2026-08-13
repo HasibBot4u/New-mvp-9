@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Search, BookOpen, FolderOpen, PlayCircle } from "lucide-react";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 

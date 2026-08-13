@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { LayoutDashboard, Library, Bell, UserCircle2, FileText } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 // Mobile quick nav — mirrors a subset of the strict sidebar.
 const items = [

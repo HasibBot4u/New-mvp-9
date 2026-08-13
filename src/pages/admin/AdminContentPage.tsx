@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { Folder, FolderOpen, FileText, ChevronRight, ChevronDown, Plus, Database, Pencil, Trash, PlaySquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SubjectModal, CycleModal, ChapterModal, VideoModal, AddContentWizardModal } from "./AdminContentModals";
-import { supabase } from "@/integrations/supabase/client";
-import { API_BASE_URL } from "@/config/env";
+import { supabase } from "@/infrastructure/supabase/client";
+import { API_BASE_URL } from "@/infrastructure/api/env";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 

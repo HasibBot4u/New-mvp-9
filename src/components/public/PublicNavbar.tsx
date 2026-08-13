@@ -3,8 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/shared/lib/utils";
+import { useAuth } from "@/features/auth/AuthContext";
 
 const links = [
   { to: "/", label: "Home" },

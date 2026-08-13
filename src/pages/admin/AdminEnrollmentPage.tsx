@@ -6,9 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Copy, Ticket, Download, Trash, Search, Loader2, ChevronDown, RotateCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { API_BASE_URL as API_BASE } from "@/config/env";
+import { supabase } from "@/infrastructure/supabase/client";
+import { useAuth } from "@/features/auth/AuthContext";
+import { API_BASE_URL as API_BASE } from "@/infrastructure/api/env";
 
 type EnrollmentCode = {
   id: string;

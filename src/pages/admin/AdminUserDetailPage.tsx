@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/AuthContext";
-import { API_BASE, apiFetch } from "@/lib/api";
+import { useAuth } from "@/features/auth/AuthContext";
+import { API_BASE, apiFetch } from "@/infrastructure/api/client";
 
 // Safe date formatter that never crashes
 function safeDate(dateStr: string | null | undefined, fallback = "N/A"): string {

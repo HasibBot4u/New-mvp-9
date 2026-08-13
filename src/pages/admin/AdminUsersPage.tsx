@@ -8,7 +8,7 @@ import { Search, MoreVertical, ShieldAlert, Mail, Activity, Trash, Loader2, Down
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/infrastructure/supabase/client";
 import { useNavigate } from "react-router-dom";
 
 export default function AdminUsersPage() {

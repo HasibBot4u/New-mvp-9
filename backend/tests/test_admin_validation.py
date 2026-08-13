@@ -46,3 +46,13 @@ async def test_admin_endpoints_reject_anonymous(async_client):
     assert (await async_client.get("/api/admin/logs")).status_code == 401
     assert (await async_client.get("/api/admin/enrollments/pending")).status_code == 401
     assert (await async_client.put("/api/admin/subjects/x", json={"data": {}})).status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("admin")
+async def test_admin_user_endpoints_reject_non_uuid(async_client):
+    """Stage 20: user_id path param must be a UUID to prevent PostgREST
+    filter injection via the direct-httpx user-inspection endpoints."""
+    for suffix in ("profile", "activity", "watch-history", "stats", "notes", "sessions"):
+        r = await async_client.get(f"/api/admin/users/not-a-uuid/{suffix}")
+        assert r.status_code in (400, 422), (suffix, r.status_code)

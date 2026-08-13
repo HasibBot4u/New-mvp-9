@@ -302,8 +302,8 @@ export function VideoModal({ isOpen, onClose, onSave, defaultValues }: any) {
 }
 
 
-import { DragDropUpload } from "@/components/DragDropUpload";
-import { supabase } from "@/integrations/supabase/client";
+import { DragDropUpload } from "@/app/components/DragDropUpload";
+import { supabase } from "@/infrastructure/supabase/client";
 
 export function ResourceModal({ isOpen, onClose, onSave, defaultValues }: any) {
   const [title, setTitle] = useState(defaultValues?.title || "");

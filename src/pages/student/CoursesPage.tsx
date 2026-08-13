@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { ChevronRight } from "lucide-react";
 
 export default function CoursesPage() {

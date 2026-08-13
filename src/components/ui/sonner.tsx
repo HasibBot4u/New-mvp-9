@@ -1,4 +1,4 @@
-import { useDarkMode } from "@/hooks/useDarkMode";
+import { useDarkMode } from "@/shared/hooks/useDarkMode";
 import { Toaster as Sonner, toast } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;

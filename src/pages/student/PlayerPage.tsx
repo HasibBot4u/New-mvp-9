@@ -2,16 +2,16 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Loader2, RotateCw, StickyNote, ChevronDown, ChevronUp } from "lucide-react";
 import { useSwipeable } from "react-swipeable";
-import { useCatalog } from "@/contexts/CatalogContext";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { useCatalog } from "@/features/catalog/CatalogContext";
+import { useAuth } from "@/features/auth/AuthContext";
+import { supabase } from "@/infrastructure/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useBatchProgress } from "@/hooks/useBatchProgress";
-import { trackEvent } from "@/lib/analytics";
-import { logActivity } from "@/lib/activityLogger";
+import { useBatchProgress } from "@/features/video/useBatchProgress";
+import { trackEvent } from "@/infrastructure/analytics/webVitals";
+import { logActivity } from "@/infrastructure/analytics/activityLogger";
 
-import { API_BASE_URL as API_BASE } from "@/config/env";
+import { API_BASE_URL as API_BASE } from "@/infrastructure/api/env";
 
 type SourceKind = "youtube" | "drive" | "telegram";
 

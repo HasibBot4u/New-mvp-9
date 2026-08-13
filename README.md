@@ -36,12 +36,16 @@ If you prefer to start them manually:
    ```bash
    npm install && npm run dev
    ```
-3. In another terminal, start the Python backend:
+3. In another terminal, start the Python backend (from the **repo root**):
    ```bash
-   cd backend
-   pip install -r requirements.txt
-   uvicorn main:app --reload --port 8000
+   pip install -r backend/requirements.txt
+   uvicorn backend.main:app --reload --port 8000
    ```
+
+> 📖 **New to the project or reviving it?** Read
+> [`docs/PROJECT_REVIVAL_GUIDE.md`](docs/PROJECT_REVIVAL_GUIDE.md) — the
+> single authoritative operational guide (architecture, accounts, env,
+> database, Telegram, deployment, disaster recovery, troubleshooting).
 
 ### Required Environment Variables
 Please consult the `docs/ENVIRONMENT_VARIABLES.md` file or `.env.example` for the complete list of required environment variables for both frontend and backend.

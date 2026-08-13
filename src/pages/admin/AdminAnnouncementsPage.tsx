@@ -6,8 +6,8 @@ import { Megaphone, Send, Users, Trash, CheckCircle2, Clock } from "lucide-react
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { apiFetch, API_BASE } from "@/lib/api";
+import { supabase } from "@/infrastructure/supabase/client";
+import { apiFetch, API_BASE } from "@/infrastructure/api/client";
 
 export default function AdminAnnouncementsPage() {
   const [message, setMessage] = useState("");

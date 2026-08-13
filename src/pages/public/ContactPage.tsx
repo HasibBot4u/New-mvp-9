@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/shared/hooks/use-toast";
+import { supabase } from "@/infrastructure/supabase/client";
 
 export default function ContactPage() {
   const { toast } = useToast();

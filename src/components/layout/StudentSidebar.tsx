@@ -21,7 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { NexusLogo } from "@/components/brand/NexusLogo";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 // STRICT: only these items, in this order, with exact Bangla labels and routes.
 const items = [

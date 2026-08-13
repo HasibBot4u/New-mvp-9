@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/infrastructure/supabase/client";
 import { Loader2, Send, CreditCard } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { motion } from "framer-motion";
-import { trackEvent } from "@/lib/analytics";
+import { trackEvent } from "@/infrastructure/analytics/webVitals";
 
 export default function EnrollmentPage() {
   const [chapters, setChapters] = useState<any[]>([]);

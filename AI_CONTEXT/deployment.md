@@ -1,2 +1,5 @@
 # Deployment & rollback
 See docs/DEPLOYMENT_PIPELINE.md. Essentials: Render build `pip install -r backend/requirements.txt`, start `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`, root dir = repo root. Netlify build `npm run build` publish `dist`. Migrations BEFORE backend deploy, additive-only. Rollback: Netlify Deploys→publish previous; Render Deploys→restore; DB→restore db-backup artifact. Health: /health; smoke: docs/TESTING_MATRIX.md §D.
+
+## Stage 19 zero-to-production rebuild
+The canonical, ordered, mobile-friendly rebuild procedure is `docs/PROJECT_REVIVAL_GUIDE.md` §21 (ZERO-TO-PRODUCTION REBUILD): accounts → GitHub → Supabase (migrations in filename order) → Render (`uvicorn backend.main:app`) → Netlify → GitHub secrets → Telegram (API creds, bot, channels, session string) → env vars → smoke test → backups/monitoring. Checkpoints A–I gate progress. Key config facts corrected in Stage 19: frontend lives on Netlify (not Render static); `.env.example` now lists TELEGRAM_WEBHOOK_SECRET/TRUSTED_PROXY_HOPS/RENDER/IS_FREE_TIER/BOT_NOTIFY_ON_START; `render.yaml` is backend-only; keep-alive uses a `BACKEND_URL` repo variable (set after backend exists).

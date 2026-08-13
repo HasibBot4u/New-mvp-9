@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Flame, Clock, CheckCircle2, Pin, Calendar, Radio, Atom, FlaskConical, Sigma } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { supabase } from "@/infrastructure/supabase/client";
+import { useAuth } from "@/features/auth/AuthContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { format } from "date-fns";
-import { logActivity } from "@/lib/activityLogger";
+import { logActivity } from "@/infrastructure/analytics/activityLogger";
 
 const IconMap: Record<string, React.ElementType> = {
   Atom: Atom,
@@ -47,9 +47,9 @@ function formatHM(seconds: number): string {
   return `${h} ঘণ্টা ${m} মিনিট`;
 }
 
-import { SubjectCard } from "@/components/cards/SubjectCard";
-import { VideoCard } from "@/components/cards/VideoCard";
-import { getThumbnailUrl } from "@/lib/utils";
+import { SubjectCard } from "@/features/catalog/SubjectCard";
+import { VideoCard } from "@/features/catalog/VideoCard";
+import { getThumbnailUrl } from "@/shared/lib/utils";
 
 export default function DashboardPage() {
   const { user, profile } = useAuth();

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription }
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/infrastructure/supabase/client";
 import { useNavigate } from "react-router-dom";
 
 const PLANS = [
@@ -64,7 +64,7 @@ export default function PricingPage() {
   const handleEnrollment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!enrollmentCode) return;
-    
+
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -75,24 +75,19 @@ export default function PricingPage() {
         return;
       }
 
-      const res = await fetch("/api/v1/payments/enroll", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ code: enrollmentCode })
-      });
-
-      if (res.ok) {
-        toast.success("Enrollment successful!");
-        navigate("/student/dashboard");
-      } else {
-        const err = await res.json();
-        toast.error(err.detail || "Invalid enrollment code");
+      // Stage 22 fix: there is no /api/v1/payments/enroll endpoint. Code
+      // redemption is chapter-scoped and performed by the enrollment page
+      // via the Supabase `use_chapter_enrollment_code` RPC. Pass the entered
+      // code along so that page can prefill it.
+      try {
+        sessionStorage.setItem("nexus_pending_code", enrollmentCode.trim());
+      } catch {
+        // storage may be unavailable; navigation still works
       }
+      toast.success("Code saved. Open a locked chapter to redeem it.");
+      navigate("/dashboard");
     } catch {
-      toast.error("Failed to process enrollment code");
+      toast.error("Failed to continue to enrollment");
     } finally {
       setLoading(false);
     }

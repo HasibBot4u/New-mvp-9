@@ -7,8 +7,8 @@
 |---|---|---|---|---|
 | Source code | GitHub repo (+ tag `backup/*`) | clone | minutes | 0 |
 | Database schema | `supabase/migrations/` | SQL editor run in order | 30 min | 0 |
-| Database DATA | **weekly db-backup workflow artifact** — the workflow file ships at `docs/ops/db-backup.workflow.yml` (this automation token cannot write `.github/workflows/`): in the GitHub web UI, create `.github/workflows/db-backup.yml` with that content once, then set the `SUPABASE_DB_URI` secret; manual `pg_dump` otherwise | SQL editor or Codespace `psql` import | 1–2 h | ≤7 days (set secret → automated) |
-| Env config | `docs/RECOVERY_FRESH_START.md` variable map + your private notes | re-enter in dashboards | 1 h | whatever you noted |
+| Database DATA | **weekly db-backup workflow artifact** — the workflow file ships at `docs/operations/db-backup.workflow.yml` (this automation token cannot write `.github/workflows/`): in the GitHub web UI, create `.github/workflows/db-backup.yml` with that content once, then set the `SUPABASE_DB_URI` secret; manual `pg_dump` otherwise | SQL editor or Codespace `psql` import | 1–2 h | ≤7 days (set secret → automated) |
+| Env config | `docs/history/RECOVERY_FRESH_START.md` variable map + your private notes | re-enter in dashboards | 1 h | whatever you noted |
 | Secrets | none stored (by design) | **rotate and reissue** after a breach; otherwise keep offline private copy | — | — |
 | Deployment | render.yaml, netlify.toml, workflows in-repo | reconnect repo | 30 min | 0 |
 | Domain/DNS | registrar account (UNKNOWN if you own a domain — netlify.app subdomain otherwise) | registrar login | hours | 0 |

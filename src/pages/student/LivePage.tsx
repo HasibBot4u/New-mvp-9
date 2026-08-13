@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Radio, Calendar, ExternalLink, Bell, BellRing } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/infrastructure/supabase/client";
 import type { LiveClass } from "@/types";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
-import { isSubscribed, subscribeUser, showNotification } from "@/lib/pushNotifications";
+import { useAuth } from "@/features/auth/AuthContext";
+import { isSubscribed, subscribeUser, showNotification } from "@/infrastructure/analytics/pushNotifications";
 
 const sb = supabase as any;
 

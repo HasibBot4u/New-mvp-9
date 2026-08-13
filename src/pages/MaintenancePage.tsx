@@ -1,6 +1,6 @@
 import { Wrench } from "lucide-react";
 import { NexusLogo } from "@/components/brand/NexusLogo";
-import { useSystemSettings } from "@/contexts/SystemSettingsContext";
+import { useSystemSettings } from "@/features/catalog/SystemSettingsContext";
 import { useEffect } from "react";
 
 export default function MaintenancePage() {

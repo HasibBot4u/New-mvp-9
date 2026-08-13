@@ -7,6 +7,20 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger("NexusEdu.VideoProcessor")
 
+
+def _require_ffmpeg() -> bool:
+    """Return True if ffmpeg/ffprobe binaries are on PATH.
+
+    Media transcoding/metadata/thumbnails are delegated to the native FFmpeg
+    suite (the appropriate specialized tool for the workload); Python only
+    orchestrates subprocesses. When the binaries are absent (e.g. Render
+    free tier) processing must be skipped rather than failing mid-job.
+    """
+    import shutil
+
+    return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
+
+
 class VideoProcessor:
     def __init__(self, work_dir: str = "/tmp/video_processing"):
         self.work_dir = work_dir

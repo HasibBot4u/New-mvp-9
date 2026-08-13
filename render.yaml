@@ -1,16 +1,33 @@
+# Render Blueprint (Infrastructure as Code).
+#
+# This file defines the BACKEND service. The frontend is deployed to
+# Netlify (see netlify.toml + .github/workflows/ci.yml); do not add a
+# static site here or you will get two competing frontend deployments.
+#
+# Render auto-detects this file on "New → Blueprint". The Dockerfile at
+# the repo root is the alternative deployment path; this Blueprint uses
+# native Python for the simplest setup.
+#
+# NOTE on plan: no plan is pinned here because Render's instance/plan
+# names change over time (the old "free" web plan is no longer available).
+# Choose the smallest paid instance that fits your budget in the Render
+# dashboard after Blueprint creation. A streaming backend must not sleep,
+# so avoid any free/sleeping tier for production video.
 services:
   - type: web
-    name: backend
+    name: nexusedu-backend
     env: python
+    region: singapore
     buildCommand: pip install -r backend/requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11.11
+      # Secrets/sensitive values must be set in the Render dashboard
+      # (SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY,
+      #  JWT_SECRET, ADMIN_TOKEN, TELEGRAM_*, PYROGRAM_SESSION_STRING,
+      #  ADMIN_CHAT_ID, WEBHOOK_URL, ALLOWED_ORIGINS, ...).
+      # See .env.example and docs/PROJECT_REVIVAL_GUIDE.md for the full list.
     healthCheckPath: /health
-
-  - type: web
-    name: frontend-static
-    env: static
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    autoDeploy: true
+    branch: main

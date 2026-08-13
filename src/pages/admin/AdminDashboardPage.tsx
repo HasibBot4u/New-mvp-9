@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAdminStats } from "@/hooks/useAdminStats";
-import { useRealtime } from "@/hooks/useRealtime";
+import { useAdminStats } from "@/shared/hooks/useAdminStats";
+import { useRealtime } from "@/features/live/useRealtime";
 import { Activity, Users, Video, AlertTriangle, Server, CheckCircle2, RefreshCw, Radio, Settings, Clock, CheckCircle } from "lucide-react";
 import { 
   XAxis, YAxis, Tooltip, ResponsiveContainer, 
@@ -9,9 +9,9 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
-import { API_BASE_URL } from "@/config/env";
-import { apiFetch } from "@/lib/api";
+import { supabase } from "@/infrastructure/supabase/client";
+import { API_BASE_URL } from "@/infrastructure/api/env";
+import { apiFetch } from "@/infrastructure/api/client";
 
 export default function AdminDashboardPage() {
   const { isLoading: statsLoading } = useAdminStats();

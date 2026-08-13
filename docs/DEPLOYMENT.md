@@ -8,21 +8,22 @@
 - Telegram API ID & Hash
 
 ## CI/CD Pipeline
-Deployment is fully automated using GitHub Actions.
-1. Code pushed to `main` branch.
-2. `.github/workflows/ci.yml` runs tests, linting, and security scans.
-3. `.github/workflows/frontend-deploy.yml` triggers Netlify/Vercel build.
-4. `.github/workflows/backend-deploy.yml` triggers Render/Heroku container build and deploy.
+Deployment is automated via GitHub Actions (`.github/workflows/`):
+1. Push/PR to `main` triggers `ci.yml`: frontend typecheck/lint/test/build,
+   backend `pytest`, and CodeQL security scanning.
+2. On push to `main`, `ci.yml` builds the frontend and deploys `dist/` to
+   **Netlify** (needs `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`).
+3. `backend-deploy.yml` triggers the **Render** deploy hook
+   (`RENDER_DEPLOY_HOOK`) when `backend/**` changes.
+4. `keep-alive.yml` pings the backend to avoid free-tier sleep.
 
-## Manual Deployment (Infrastructure as Code)
-We utilize Terraform for backend infrastructure deployment.
-
-```bash
-cd terraform
-terraform init
-terraform plan -var="render_api_key=$RENDER_API_KEY" -var="supabase_url=$SUPABASE_URL" ...
-terraform apply
-```
+## Infrastructure as code
+Active declarative infra lives in `render.yaml` (backend service) and
+`netlify.toml` (frontend), with the container image defined by `Dockerfile`.
+A previous placeholder Terraform module was removed in Stage 17 because it
+referenced invalid Render resources and was never operational; do not
+reintroduce Terraform unless there is a concrete multi-resource provisioning
+need that `render.yaml` cannot express.
 
 ## Environment Variables
 The system requires strict environment configuration. Review `.env.example` and `backend/.env.example` to ensure all production variables are provisioned.

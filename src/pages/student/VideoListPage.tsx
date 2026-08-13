@@ -1,16 +1,16 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link, useParams, Navigate } from "react-router-dom";
 import { Lock, KeyRound, Loader2, ArrowUpDown, Search } from "lucide-react";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
-import { useChapterAccess } from "@/hooks/useChapterAccess";
+import { useToast } from "@/shared/hooks/use-toast";
+import { useChapterAccess } from "@/features/video/useChapterAccess";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { VirtualVideoList } from "@/components/virtual/VirtualVideoList";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { VirtualVideoList } from "@/features/catalog/VirtualVideoList";
 
 export default function VideoListPage() {
   const { chapterId } = useParams();

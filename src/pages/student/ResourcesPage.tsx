@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/infrastructure/supabase/client";
 import { Loader2, FileText, Download, ExternalLink, Eye } from "lucide-react";
 import { motion } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PDFViewer } from "@/components/PDFViewer";
+import { PDFViewer } from "@/features/video/PDFViewer";
 
 interface ResourceRow {
   id: string;

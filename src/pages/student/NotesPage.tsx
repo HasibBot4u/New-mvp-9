@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { StickyNote, Loader2, Video, ChevronRight } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { supabase } from "@/infrastructure/supabase/client";
+import { useAuth } from "@/features/auth/AuthContext";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { format } from "date-fns";
 
 interface NoteRow {

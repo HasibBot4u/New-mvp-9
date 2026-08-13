@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Loader2, Mail, Lock, User } from "lucide-react";
-import { AuthShell } from "@/components/auth/AuthShell";
-import { useAuth } from "@/contexts/AuthContext";
+import { AuthShell } from "@/features/auth/AuthShell";
+import { useAuth } from "@/features/auth/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
-import { useSystemSettings } from "@/contexts/SystemSettingsContext";
+import { useToast } from "@/shared/hooks/use-toast";
+import { useSystemSettings } from "@/features/catalog/SystemSettingsContext";
 
 export default function SignupPage() {
   const { signUp } = useAuth();

@@ -115,10 +115,19 @@ class UploadWorker:
             # Download using app (Pyrogram) with progress tracking
             await self.app.download_media(file_id, file_name=download_path, progress=self.update_progress, progress_args=(queue_id,))
             
-            # 2. Extract metadata
+            # 2. Extract metadata (requires ffprobe)
+            if not video_processor._require_ffmpeg():
+                logger.warning(
+                    "[UploadWorker] ffmpeg/ffprobe not available; skipping "
+                    "metadata/thumbnail/variant processing for %s", file_name
+                )
+                await self.update_status(queue_id, "completed")
+                return
+
             metadata = await video_processor.get_metadata(download_path)
-            
+
             # Handle Render Free Tier Limitations
+            thumbnails = []
             if self.is_render_free_tier():
                 logger.info("Render free tier detected. Skipping FFmpeg processing.")
             else:
@@ -134,6 +143,7 @@ class UploadWorker:
                     thumb_channel_id = int(thumb_channel_str)
                     thumbnail_msg_id = await video_processor.upload_thumbnail_to_telegram(self.app, thumb_to_upload, thumb_channel_id)
             
+            variants = {}
             if not self.is_render_free_tier():
                 # 4. Generate variants
                 variants = await video_processor.generate_variants(download_path)

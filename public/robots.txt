@@ -13,5 +13,4 @@ Disallow: /enrollment
 Disallow: /search
 Allow: /
 
-# TODO: Replace with actual production domain
-Sitemap: https://YOUR_PRODUCTION_DOMAIN_HERE.com/sitemap.xml
+Sitemap: /sitemap.xml

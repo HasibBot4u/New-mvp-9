@@ -1,15 +1,15 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { Bell, Search, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/features/auth/AuthContext";
 import { NexusLogo } from "@/components/brand/NexusLogo";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { supabase } from "@/integrations/supabase/client";
-import { cn } from "@/lib/utils";
+import { supabase } from "@/infrastructure/supabase/client";
+import { cn } from "@/shared/lib/utils";
 
 const links = [
   { to: "/dashboard", label: "ড্যাশবোর্ড" },

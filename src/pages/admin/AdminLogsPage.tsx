@@ -3,11 +3,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Play, Square, Download, Trash2, Search } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/infrastructure/supabase/client";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { API_BASE, apiFetch } from "@/lib/api";
+import { API_BASE, apiFetch } from "@/infrastructure/api/client";
 
 export default function AdminLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);

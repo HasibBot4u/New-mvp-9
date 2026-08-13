@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Sparkles, Target, HeartHandshake, Trophy } from "lucide-react";
-import { useSystemSettings } from "@/contexts/SystemSettingsContext";
+import { useSystemSettings } from "@/features/catalog/SystemSettingsContext";
 
 const values = [
   { icon: Target, title: "Focus", desc: "Three subjects, deep coverage. No filler, no clickbait." },

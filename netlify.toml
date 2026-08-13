@@ -7,9 +7,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  PYTHON_VERSION = "3.8"
   NETLIFY_BUILD_DEBUG = "false"
 
+# SPA fallback: every client-side route serves index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"

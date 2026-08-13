@@ -5,9 +5,9 @@ import { StudentSidebar } from "./StudentSidebar";
 import { StudentTopbar } from "./StudentTopbar";
 import { StudentBottomNav } from "./StudentBottomNav";
 import { BackendStatus } from "@/components/shared/BackendStatus";
-import { useDownloadQueue, DownloadQueuePanel } from "@/components/DownloadQueue";
-import { useOfflineStatus } from "@/hooks/useOfflineStatus";
-import { usePwaInstall } from "@/hooks/usePwaInstall";
+import { useDownloadQueue, DownloadQueuePanel } from "@/app/components/DownloadQueue";
+import { useOfflineStatus } from "@/shared/hooks/useOfflineStatus";
+import { usePwaInstall } from "@/shared/hooks/usePwaInstall";
 import { Button } from "@/components/ui/button";
 
 export function StudentLayout({ isDark, toggleDark }: { isDark?: boolean; toggleDark?: () => void }) {

@@ -1,6 +1,6 @@
 # Telegram Infrastructure Reconstruction Guide
 
-**Context (evidence):** `docs/PROJECT_REVIVAL_ROADMAP.md` + `TELEGRAM_RECOVERY_GUIDE.md` state the original **18 storage channels and the bot were deleted externally**. All channel/bot identifiers, message IDs and video files from that era are **permanently lost**. This guide rebuilds the infrastructure from scratch using only what the code requires. **No old ID is reusable — never assume one.**
+**Context (evidence):** The original 18 storage channels and the bot were deleted externally in 2026 (see `docs/history/TELEGRAM_RECOVERY_GUIDE.md` and `docs/history/PROJECT_REVIVAL_ROADMAP.md`). All channel/bot identifiers, message IDs and video files from that era are **permanently lost**. This guide rebuilds the infrastructure from scratch using only what the code requires. **No old ID is reusable — never assume one.**
 
 ## 1. What the code expects (inventory from repository evidence)
 

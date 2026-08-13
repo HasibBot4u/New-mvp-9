@@ -19,7 +19,7 @@ function makeChain() {
   return ret;
 }
 
-vi.mock('@/integrations/supabase/client', () => ({
+vi.mock('@/infrastructure/supabase/client', () => ({
   supabase: {
     from: () => makeChain(),
     rpc: () => Promise.resolve({ data: null, error: null }),
@@ -28,7 +28,7 @@ vi.mock('@/integrations/supabase/client', () => ({
     auth: { getSession: () => Promise.resolve({ data: { session: null } }) },
   },
 }));
-vi.mock('@/hooks/useAdminStats', () => ({
+vi.mock('@/shared/hooks/useAdminStats', () => ({
   useAdminStats: () => ({
     stats: { live_users: 1, active_streams: 0, server_resources: { cpu_percent: 1, memory_percent: 1 } },
     loading: false,
@@ -36,9 +36,9 @@ vi.mock('@/hooks/useAdminStats', () => ({
     refetch: vi.fn(),
   }),
 }));
-vi.mock('@/hooks/useRealtime', () => ({ useRealtime: () => ({}) }));
+vi.mock('@/features/live/useRealtime', () => ({ useRealtime: () => ({}) }));
 vi.mock('@/components/ui/sonner', () => ({ Toaster: () => null }));
-vi.mock('@/contexts/CatalogContext', () => ({ useCatalog: () => ({ refresh: vi.fn(), catalog: null }) }));
+vi.mock('@/features/catalog/CatalogContext', () => ({ useCatalog: () => ({ refresh: vi.fn(), catalog: null }) }));
 vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({
     data: {

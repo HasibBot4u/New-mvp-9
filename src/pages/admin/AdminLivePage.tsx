@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Plus, Trash2, Radio, X, Bell } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/infrastructure/supabase/client";
+import { useToast } from "@/shared/hooks/use-toast";
 import type { LiveClass } from "@/types";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 

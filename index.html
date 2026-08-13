@@ -24,9 +24,37 @@
     <meta name="twitter:description" content="Video lectures, live classes, and progress tracking for HSC students in Bangladesh.">
     <meta name="twitter:image" content="https://nexusedu.netlify.app/og-image.png">
     
-    <link rel="canonical" href="https://nexusedu.netlify.app">
-    <link rel="preconnect" href="https://jwwlnjcickeignkemvrj.supabase.co">
-    <link rel="dns-prefetch" href="https://nexusedu-backend-0bjq.onrender.com">
+    <!-- Build-time environment island. Vite replaces %VITE_*% tokens; when
+         a variable is unset the token remains and is treated as "missing".
+         Canonical/preconnect hints read this so we never pin a stale or
+         deleted project/service after infrastructure is recreated. -->
+    <script>
+      window.__NEXUSEDU_ENV__ = {
+        SITE_URL: "%VITE_SITE_URL%",
+        SUPABASE_URL: "%VITE_SUPABASE_URL%",
+        API_BASE_URL: "%VITE_API_BASE_URL%"
+      };
+    </script>
+    <script>
+      (function () {
+        var env = (window.__NEXUSEDU_ENV__ || {});
+        function valid(v) { return v && v.indexOf('%') !== 0; }
+        function setHint(rel, href) {
+          if (!valid(href)) return;
+          var l = document.createElement('link');
+          l.rel = rel; l.href = href;
+          if (rel === 'preconnect') l.crossOrigin = 'anonymous';
+          document.head.appendChild(l);
+        }
+        setHint('canonical', env.SITE_URL);
+        setHint('preconnect', env.SUPABASE_URL);
+        if (valid(env.API_BASE_URL)) {
+          var d = document.createElement('link');
+          d.rel = 'dns-prefetch'; d.href = env.API_BASE_URL;
+          document.head.appendChild(d);
+        }
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/nexusedu-icon.svg" />
     <link rel="manifest" href="/manifest.json" />
     
@@ -117,6 +145,6 @@
 
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/app/main.tsx"></script>
   </body>
 </html>

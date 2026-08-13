@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { TrendingUp, PlayCircle, Clock, CheckCircle2, Loader2 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import { useCatalog } from "@/contexts/CatalogContext";
+import { useAuth } from "@/features/auth/AuthContext";
+import { supabase } from "@/infrastructure/supabase/client";
+import { useCatalog } from "@/features/catalog/CatalogContext";
 import { Progress } from "@/components/ui/progress";
 
 interface Row {
